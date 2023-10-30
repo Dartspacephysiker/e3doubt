@@ -1,0 +1,18 @@
+name: e3duncertainty
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - numpy
+  - pandas
+  - xarray
+  - rpy2
+  - r-ggplot2
+  - matplotlib
+  - pip
+  - pip:
+    - apexpy
+    - iricore
+    - ppigrf
+
+

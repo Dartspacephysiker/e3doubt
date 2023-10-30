@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools >= 64", "setuptools_scm[toml]"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+homepage = "https://github.com/Dartspacephysiker/e3duncertainty"
+
+[project]
+name = "e3duncertainty"
+dynamic = ["version"]
+authors = [
+    { name = "Spencer M. Hatch", email = "spencer.hatch@ift.uib.no" },
+]
+maintainers = [
+    { name = "Spencer M. Hatch", email = "spencer.hatch@ift.uib.no" },
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.7"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+]
+dependencies = [
+    "numpy >= 1.14",
+    "future >= 0.16",
+    "matplotlib",
+    "scipy >= 0.9",
+    "toolz >= 0.8",
+    "pandas >= 0.20",
+    "apexpy >= 1.0",
+    "ppigrf >= 1.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest >=6",
+]
+dev = [
+    "pytest >=6",
+    "Sphinx",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src"]
+
+[tool.setuptools_scm]
