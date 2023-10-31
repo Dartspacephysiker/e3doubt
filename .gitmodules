@@ -1,0 +1,3 @@
+[submodule "src/r/ISgeometry"]
+	path = src/ISgeometry
+	url = https://github.com/ilkkavir/ISgeometry.git

@@ -12,7 +12,8 @@ dependencies:
   - pip
   - pip:
     - apexpy
-    - iricore
+    - iri2016
+    - pymsis
     - ppigrf
 
 
