@@ -92,6 +92,17 @@ DEFAULT_H  = np.array([80,100,120,150,200,250,300,350,400])
 # Geomagnetic reference radius:
 REFRE = 6371.2 # km
 
+"""
+TODO
+====
+
+How to handle beams? Should that just be the number of beam/az pairs (default 27)?
+
+Given a total time window that is available for integration, how to calculate integration time for each beam given that we want to divide up time evenly among beams?
+
+
+"""
+
 class E3DUNC(object):
     """
     
@@ -280,7 +291,7 @@ class E3DUNC(object):
                             'ECEF' :R.ravel(),
                             'fwhm' :fwhmrx[rxi]})
     
-        self._radarconfig = {'tx'        : txdict,
+        self.radarconfig = {'tx'        : txdict,
                              'rx'        : rxdicts,
                              'Pt'        : Pt,
                              'fradar'    : fradar,
@@ -308,7 +319,7 @@ class E3DUNC(object):
                       el = el.size,
                       h = h.size,
                       tx = 1,
-                      rx = len(self._radarconfig['rx']))
+                      rx = len(self.radarconfig['rx']))
             
         if az.size != el.size:
 
@@ -342,7 +353,7 @@ class E3DUNC(object):
             
         ####################
         # Get these points in ECEF coordinates
-        txgdlat, txglon = self._sites.loc[self._radarconfig['tx']['name']]
+        txgdlat, txglon = self._sites.loc[self.radarconfig['tx']['name']]
         rECEF = get_range_line(geodetic2geocentriclat(txgdlat),
                                txglon,
                                az, el, h,
@@ -597,7 +608,21 @@ class E3DUNC(object):
         self.rparms = rparms
 
 
-    def calc_uncertainties(self,fwhmRange=2,resR=1,integrationsec=10):
+    def calc_uncertainties(self,fwhmRange=2,resR=None,integrationsec=10):
+        """
+        resR should be at least as large as fwhmRange
+
+        fwhmRange ~ bit length of code
+        resR ~ after integration, should be integer multiple of bit length
+
+        Typical EISCAT analysis uses a more-or-less fixed set of range resolutions
+
+        have code take stock of which inputs the user has changed. For example, if only integ time or dutyCycle changes, no need to re-run R code, just scale outputs. 
+
+        """
+
+        if resR is None:
+            resR = fwhmRange
 
         builderarr = np.zeros(self.N['pt'])*np.nan
 
@@ -661,3 +686,118 @@ class E3DUNC(object):
             self.uncdict.loc[i,Tilabels] = dTis
             self.uncdict.loc[i,Vilabels] = dVis
             
+
+    def get_los_vectors_ecef(self):
+        
+        loslist = dict()
+        for i,rx in enumerate(self.radarconfig['rx']):
+            los = get_los_vector_ecef(self.points[['xecef','yecef','zecef']].values.T,
+                                      self.radarconfig['tx']['ECEF'],
+                                      rx['ECEF'])
+
+            loslist[i] = los
+
+        return loslist
+
+
+    def get_los_vectors_enu(self,SANITYCHECK=True):
+        
+        loslist = dict()
+        for i,rx in enumerate(self.radarconfig['rx']):
+            out = get_los_vector_enu(self.points[['xecef','yecef','zecef']].values.T,
+                                     self.radarconfig['tx']['ECEF'],
+                                     rx['ECEF'],
+                                     return_coords=SANITYCHECK)
+
+            if SANITYCHECK:
+                los, gdlat, h = out
+
+                # make sure calculations of geodetic altitude differ by less than 1 km
+                assert np.all(np.abs(self.points['h']-h) < 1)
+
+                # make sure calculations of geodetic latitude differ by less than .02
+                assert np.all(np.abs(gdlat-self.points['gdlat']) < 0.02)
+
+            else:
+                los = out
+
+            loslist[i] = los
+
+        return loslist
+
+
+def cartesian_to_spherical_with_position(x, y, z, vx, vy, vz,
+                                         return_coords=True):
+    """
+    returns array of spherical components of vector given by vx, vy, and vz with shape (3,N)
+
+    Written mostly by ChatGPT3.5!
+    """
+    r = np.sqrt(x**2 + y**2 + z**2)
+    theta = np.arccos(z / r)
+    phi = np.arctan2(y, x)
+
+    vr = (vx * x + vy * y + vz * z) / r
+    vtheta = (vx * np.cos(phi) * np.cos(theta) + vy * np.sin(phi) * np.cos(theta) - vz * np.sin(theta))
+    vphi = (-vx * np.sin(phi) + vy * np.cos(phi))
+
+    if return_coords:
+        return np.vstack([vr, vtheta, vphi]), np.vstack([r, theta, phi])
+    else:
+        return np.vstack([vr, vtheta, vphi])
+
+
+def get_los_vector_ecef(p, t, r,
+                   normalize=True):
+    """
+    x,y,z    : ECEF coordinates of point(s)                (array, shape: 3, or (3,N))
+    t        : x, y, and z ECEF coordinates of transmitter (array, shape: 3,)
+    r        : x, y, and z ECEF coordinates of receiver    (array, shape: 3,)
+
+    returns array of  "line-of-sight" vector(s) with shape (3,N)
+
+    Equation 1 in Virtanen et al (2014, doi 10.1002/2014JA020540)
+    """
+    
+    x, y, z = p
+    kt = np.vstack([x-t[0], y-t[1], z-t[2]]) #Vector pointing from transmitter to point
+    kr = np.vstack([r[0]-x, r[1]-y, r[2]-z]) #Vector pointing from point to receiver
+
+    ks = kr-kt
+
+    if normalize:
+        ks = ks/np.linalg.norm(ks,axis=0)
+
+    return ks
+
+
+def get_los_vector_enu(p, t, r,
+                       normalize=True,
+                       return_coords=False):
+    
+    from geodesy import geoc2geod
+
+    los = get_los_vector_ecef(p, t, r,
+                              normalize=normalize)
+
+    los_rtp, rtp = cartesian_to_spherical_with_position(*p, *los)
+
+    gdlat, h, losn, losd = geoc2geod(np.rad2deg(rtp[1]), rtp[0], los_rtp[1], los_rtp[0])
+
+    los_enu = np.vstack([los_rtp[2],losn, -losd])
+
+    if return_coords:
+        return los_enu, gdlat, h
+    else:
+        return los_enu
+
+
+# los = get_los_vector_ecef(e3du.points[['xecef','yecef','zecef']].values.T,
+#                           e3du._radarconfig['tx']['ECEF'],
+#                           e3du._radarconfig['rx'][0]['ECEF'])
+
+# los_rtp, rtp = cartesian_to_spherical_with_position(*e3du.points[['xecef','yecef','zecef']].values.T,
+#                                                     *los)
+
+
+
