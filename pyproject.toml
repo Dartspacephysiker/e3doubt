@@ -3,10 +3,10 @@ requires = ["setuptools >= 64", "setuptools_scm[toml]"]
 build-backend = "setuptools.build_meta"
 
 [project.urls]
-homepage = "https://github.com/Dartspacephysiker/e3duncertainty"
+homepage = "https://github.com/Dartspacephysiker/e3doubt"
 
 [project]
-name = "e3duncertainty"
+name = "e3doubt"
 dynamic = ["version"]
 authors = [
     { name = "Spencer M. Hatch", email = "spencer.hatch@ift.uib.no" },
@@ -27,14 +27,16 @@ classifiers = [
     "Development Status :: 4 - Beta",
 ]
 dependencies = [
-    "numpy >= 1.14",
-    "future >= 0.16",
-    "matplotlib",
-    "scipy >= 0.9",
-    "toolz >= 0.8",
-    "pandas >= 0.20",
     "apexpy >= 1.0",
-    "ppigrf >= 1.0",
+    "future >= 0.16",
+    "iri2016 >= 1.11",
+    "matplotlib >= 3.6",
+    "numpy >= 1.23",
+    "pandas >= 1.5",
+    "ppigrf >= 1.0.0",
+    "pymsis >= 0.8.0",
+    "rpy2 >= 3.5",
+    "toolz >= 0.8",
 ]
 
 [project.optional-dependencies]

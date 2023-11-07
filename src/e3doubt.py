@@ -70,18 +70,26 @@ except:
 
 rc('text', usetex=False)
 
+to_floatv = lambda x: robj.vectors.FloatVector(x)
+get_gd = lambda trx: (trx['gdlat'],trx['glon'])
+
 IRIINPUTS = ['ne','Te','Ti']
 DEFAULT_IONOSPHERE = {'ne':1e11,  # m^{-3}
                       'Te':1e3,   # K
                       'Ti':500}   # K
 
 DEFAULT_RADAR_PARMS = dict(fradar=233e6,  # Radar frequency [Hz]
-                           tau0=100,      # ACF time-scale [us] (IS THIS REASONABLE?)
+                           # tau0=100,      # ACF time-scale [us] (IS THIS REASONABLE?); Calculated automatically by parameterErrorEstimates.R
                            dutyCycle=.25,  # Transmitter duty cycle
-                           RXduty=0.8,      # Receiver duty cycle
-                           Tnoise=200, # Noise temperature for receiver sites
-                           Pt=5.e6,      # Devin says " The goal for the first stage implementation of the system is for 5 MW TX power 
+                           RXduty=(0.75,1.,1.),      # Receiver duty cycle
+                           Tnoise=300, # Noise temperature for receiver sites
+                           Pt=3.5e6,      # Devin says " The goal for the first stage implementation of the system is for 5 MW TX power 
+                           mineleTrans=30,
+                           mineleRec=(30,30,30),
+                           phArrTrans=True,
+                           phArrRec=(True,True,True),
 )
+
 DEFAULT_AZ = np.array([  0,  35,  69, 101, 130, 156, 180, 204, 231, 258, 288, 323,
                          0,  30,  60,  90, 120, 150, 180, 210, 240, 270, 300, 330,
                        180, 180, 180])
@@ -103,7 +111,7 @@ Given a total time window that is available for integration, how to calculate in
 
 """
 
-class E3DUNC(object):
+class E3DOUBT(object):
     """
     
     Parameters
@@ -127,7 +135,7 @@ class E3DUNC(object):
     Examples
     --------
     >>> # initialize 
-    >>> m = E3DUNC()
+    >>> m = E3DOUBT()
     
     >>> # make summary plot:
         
@@ -154,18 +162,20 @@ class E3DUNC(object):
                  fwhmRange=3,
                  transmitter: str='SKI',
                  receivers: list=['SKI','KAI','KRS'],
-                 fwhmtx = 2.2,
-                 fwhmrx = [1.3, 1.8, 1.8],
+                 fwhmtx = 2.1,
+                 fwhmrx = [1.2, 1.7, 1.7],
                  radarparms = DEFAULT_RADAR_PARMS,
                  default_ionosphere=DEFAULT_IONOSPHERE,
     ):
-        """ __init__ function for E3DUNC class
+        """ __init__ function for E3DOUBT class
 
         fwhmRange: Range resolution in ACF decoding [km]
         
+        plasma_parms: The idea is to allow the user to provide a custom set of ionosphere parameters instead of running IRI and MSIS
+
         """
 
-        print("WARNING: Haven't implemented/stored following keywords: dwell_times, bit_length, beam_width")
+        print("WARNING: Haven't implemented/stored following keywords: dwell_times, bit_length, beam_width, plasma_parms")
 
         ####################
         # Make sure we have the location of transmitter and receiver(s) that the user wants
@@ -213,8 +223,6 @@ class E3DUNC(object):
             )
         )
 
-        ####################
-        # Handle model ionosphere
         self._isCallable_IRI = iri2016 is not None
         self._called_IRI = False
 
@@ -222,29 +230,38 @@ class E3DUNC(object):
         self.do_call_IRI = False
         self.default_ionosphere = {p:default_ionosphere[p] for p in IRIINPUTS}
 
-        self.run_IRI(plasma_parms)
-
-        ####################
-        # Handle model atmosphere
         self._isCallable_MSIS = pmsis is not None
         self._called_MSIS = False
 
-        self.run_MSIS(plasma_parms)
-
-        ####################
-        # Calculate collision frequency
-        self.calc_collfreq()
+        self._isCallable_R = (importr is not None) and (robj is not None)
+        assert self._isCallable_R,"No point in going further, R can't be called from python"
 
         ####################
         # Handle R via rpy2
-        self._isCallable_R = (importr is not None) and (robj is not None)
         self._ISgeometry = None
         self.rparms = None
         self.init_R()
+        self._init_unc_parms()
 
-        if self._isCallable_R:
-            self.init_unc_parms()
-            self.calc_uncertainties()
+
+    def run_models(self):
+        ####################
+        # Handle model ionosphere
+
+        # self._run_IRI(plasma_parms)
+        self._run_IRI()
+
+        ####################
+        # Handle model atmosphere
+
+        self._run_MSIS()
+
+        ####################
+        # Calculate collision frequency
+        self._calc_collfreq()
+
+        print("IRI output, MSIS output, and collision frequencies stored in E3DOUBT.iri, E3DOUBT.msis, and E3DOUBT.points['nuin']")
+        print("Next, you can perform uncertainty calculations with E3DOUBT.calc_uncertainties()")
 
 
     def _setup_radarconfig(self, transmitter,fwhmtx, receivers, fwhmrx,
@@ -253,9 +270,16 @@ class E3DUNC(object):
         Make dictionaries containing information about transmitter, receivers, and other radar parameters
         """
 
-        Pt, fradar, Tnoise, dutyCycle, RXduty, tau0 = (radarparms[name] for name in
-                                                       ["Pt", "fradar", "Tnoise",
-                                                        "dutyCycle", "RXduty", "tau0"])
+        # Pt, fradar, Tnoise, dutyCycle, RXduty, tau0 = (radarparms[name] for name in
+        #                                                ["Pt", "fradar", "Tnoise",
+        #                                                 "dutyCycle", "RXduty", "tau0"])
+        Pt, fradar, Tnoise, dutyCycle, RXduty = (radarparms[name] for name in
+                                                 ["Pt", "fradar", "Tnoise",
+                                                  "dutyCycle", "RXduty"])
+        mineleTrans = radarparms['mineleTrans']
+        mineleRec = radarparms['mineleRec']
+        phArrTrans = radarparms['phArrTrans']
+        phArrRec = radarparms['phArrRec']
 
         self.tx = transmitter
     
@@ -268,12 +292,15 @@ class E3DUNC(object):
         eR, nR, uR = get_enu_vectors_cartesian(gclat,glon,degrees=True)
         R = geodeticheight2geocentricR(gdlat, 0.) * uR
     
-        txdict = {'name' :transmitter,
-                  'gdlat':gdlat,
-                  'gclat':gclat,
-                  'glon' :glon,
-                  'ECEF' : R.ravel(),
-                  'fwhm' :fwhmtx}
+        txdict = {'name'  :transmitter,
+                  'gdlat' :gdlat,
+                  'gclat' :gclat,
+                  'glon'  :glon,
+                  'ECEF'  : R.ravel(),
+                  'fwhm'  :fwhmtx,
+                  'minele':mineleTrans,
+                  'phArr':phArrTrans,
+        }
     
         rxdicts = []
         for rxi,rx in enumerate(receivers):
@@ -289,7 +316,9 @@ class E3DUNC(object):
                             'gclat':gclat,
                             'glon' :glon,
                             'ECEF' :R.ravel(),
-                            'fwhm' :fwhmrx[rxi]})
+                            'fwhm' :fwhmrx[rxi],
+                            'minele':mineleRec[rxi],
+                            'phArr':phArrRec[rxi]})
     
         self.radarconfig = {'tx'        : txdict,
                              'rx'        : rxdicts,
@@ -298,7 +327,7 @@ class E3DUNC(object):
                              'Tnoise'    : Tnoise,
                              'RXduty'    : RXduty,
                              'dutyCycle' : dutyCycle,
-                             'tau0'      : tau0,
+                             # 'tau0'      : tau0,
         }
 
 
@@ -382,17 +411,21 @@ class E3DUNC(object):
         )
 
 
-    def run_IRI(self,plasma_parms):
+    # def _run_IRI(self,plasma_parms):
+    def _run_IRI(self):
 
+        # IDEA: check if we need to calculate parameters from IRI. Not necessary if user has provided them all
         # See if we need iri2016
-        for parm in plasma_parms:
-            if parm in IRIINPUTS:
-                self.IRI[parm] = False
-            else:
-                raise Exception("'plasma_parms' can only contain the following parameters: {:s}".format(", ".join(IRIINPUTS)))
+        # for parm in plasma_parms:
+        #     if parm in IRIINPUTS:
+        #         self.IRI[parm] = False
+        #     else:
+        #         raise Exception("'plasma_parms' can only contain the following parameters: {:s}".format(", ".join(IRIINPUTS)))
                 
-        for parm in IRIINPUTS:
-            self.do_call_IRI = self.do_call_IRI or self.IRI[parm]
+        # for parm in IRIINPUTS:
+        #     self.do_call_IRI = self.do_call_IRI or self.IRI[parm]
+
+        self.do_call_IRI = True
 
         if self.do_call_IRI:
             if not self._isCallable_IRI:
@@ -434,36 +467,36 @@ class E3DUNC(object):
                 self._called_IRI = True
 
 
-    def run_MSIS(self,plasma_parms):
+    def _run_MSIS(self):
 
         if self._isCallable_MSIS:
-                print("Gonna call MSIS now")
+            print("Gonna call MSIS now")
                 
-                dates = [self.refdate]*self.N['pt']
-                lons,lats,alts = self.points[['glon','gdlat','h']].values.T
-                out = pmsis.run(dates, lons, lats, alts) #f107s, f107as, aps)
+            dates = [self.refdate]*self.N['pt']
+            lons,lats,alts = self.points[['glon','gdlat','h']].values.T
+            out = pmsis.run(dates, lons, lats, alts) #f107s, f107as, aps)
 
-                # From pymsis documentation
-                # ndarray (ndates, nlons, nlats, nalts, 11) or (ndates, 11)
-                #     | The data calculated at each grid point:
-                #     | [Total mass density (kg/m3)
-                #     | N2 # density (m-3),
-                #     | O2 # density (m-3),
-                #     | O # density (m-3),
-                #     | He # density (m-3),
-                #     | H # density (m-3),
-                #     | Ar # density (m-3),
-                #     | N # density (m-3),
-                #     | Anomalous oxygen # density (m-3),
-                #     | NO # density (m-3),
-                #     | Temperature (K)]
-                
-                # rhom, N2, O2, O, He, H, Ar, N, AnomO, NO, Tn = out.T
+            # From pymsis documentation
+            # ndarray (ndates, nlons, nlats, nalts, 11) or (ndates, 11)
+            #     | The data calculated at each grid point:
+            #     | [Total mass density (kg/m3)
+            #     | N2 # density (m-3),
+            #     | O2 # density (m-3),
+            #     | O # density (m-3),
+            #     | He # density (m-3),
+            #     | H # density (m-3),
+            #     | Ar # density (m-3),
+            #     | N # density (m-3),
+            #     | Anomalous oxygen # density (m-3),
+            #     | NO # density (m-3),
+            #     | Temperature (K)]
+            
+            # rhom, N2, O2, O, He, H, Ar, N, AnomO, NO, Tn = out.T
 
-                for ic,col in enumerate(self.msis.columns):
-                    self.msis.loc[self.msis.index,col] = out[:,ic]
+            for ic,col in enumerate(self.msis.columns):
+                self.msis.loc[self.msis.index,col] = out[:,ic]
 
-                self._called_MSIS = True
+            self._called_MSIS = True
 
         else:
             print("Sorry, can't get MSIS!")
@@ -487,7 +520,7 @@ class E3DUNC(object):
             break
 
 
-    def calc_collfreq(self):
+    def _calc_collfreq(self):
         """
         Assume that the right thing to do is to calculate an weighted average collision frequency, where the weights are the abundances of NO+, O2+, and O+
         """
@@ -506,25 +539,23 @@ class E3DUNC(object):
         self.points['nuin'] = (vinNOp*self.iri['NO+']+vinO2p*self.iri['O2+']+vinOp*self.iri['O+'])/self.iri['ne']
                 
 
-    def init_unc_parms(self,
-                       pm0: tuple= (30.5,16),
-                       hTeTi: int=110,
-                       Tnoise: int=300,
-                       Pt: float=3.5e6,
-                       locTrans: tuple=(69.45719, 20.46667),
-                       locRec: tuple=((69.45719, 20.46667),
-                                      (68.157,19.45),
-                                      (68.3175,22.48325)),
-                       fwhmTrans: float=2.1,
-                       fwhmRec: tuple=(1.2, 1.7, 1.7),
-                       RXduty: tuple=(.75,1,1),
-                       mineleTrans: int=30,
-                       mineleRec: tuple=(30,30,30),
-                       fradar: float=233e6,
-                       phArrTrans: bool=True,
-                       phArrRec: tuple=(True,True,True),
-                       fwhmIonSlab: int=100,
-                       dutyCycle: float=0.25):
+    def _init_unc_parms(self,
+                       # Tnoise: int=300,
+                       # Pt: float=3.5e6,
+                       # locTrans: tuple=(69.45719, 20.46667),
+                       # locRec: tuple=((69.45719, 20.46667),
+                       #                (68.157,19.45),
+                       #                (68.3175,22.48325)),
+                       # fwhmTrans: float=2.1,
+                       # fwhmRec: tuple=(1.2, 1.7, 1.7),
+                       # RXduty: tuple=(.75,1,1),
+                       # mineleTrans: int=30,
+                       # mineleRec: tuple=(30,30,30),
+                       # fradar: float=233e6,
+                       # phArrTrans: bool=True,
+                       # phArrRec: tuple=(True,True,True),
+                       # dutyCycle: float=0.25,
+    ):
         """
         From I. Virtanen's r documentation
     
@@ -562,21 +593,55 @@ class E3DUNC(object):
         
         """
     
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("Warning! E3DUNC.init_unc_parms doesn't use fradar, dutyCycle, RXduty, Tnoise, Pt, or tau0 specified by user in initialization of E3DUNC object!")
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("")
+        # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # print("Warning! E3DOUBT.init_unc_parms doesn't ... Wait, never mind. This does it _all_.")
+        # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # print("")
+
+        tx = self.radarconfig['tx']
+        rxs = self.radarconfig['rx']
+            
+        Tnoise = self.radarconfig['Tnoise']
+        Pt = self.radarconfig['Pt']
+
+        locTrans = get_gd(tx)
+        locRec = tuple([get_gd(rx) for rx in rxs])
+
+        fwhmTrans = tx['fwhm']
+        fwhmRec = tuple([rx['fwhm'] for rx in rxs])
+        RXduty = self.radarconfig['RXduty']
+
+        mineleTrans = self.radarconfig['tx']['minele']
+        mineleRec = tuple([rx['minele'] for rx in rxs])
+
+        fradar = self.radarconfig['fradar']
+
+        phArrTrans = tx['phArr']
+        phArrRec = tuple([rx['phArr'] for rx in rxs])
+
+        dutyCycle = self.radarconfig['dutyCycle']
+
+        # store a copy of dat
+        uncparms = dict(
+            # pm0=pm0,
+            # hTeTi=hTeTi,
+                        Tnoise=Tnoise,
+                        Pt=Pt,
+                        locTrans=locTrans,
+                        locRec=locRec,
+                        fwhmTrans=fwhmTrans,
+                        fwhmRec=fwhmRec,
+                        RXduty=RXduty,
+                        mineleTrans=mineleTrans,
+                        mineleRec=mineleRec,
+                        fradar=fradar,
+                        phArrTrans=phArrTrans,
+                        phArrRec=phArrRec,
+                        # fwhmIonSlab=fwhmIonSlab,
+                        dutyCycle=dutyCycle)
 
         rparms = dict()
     
-        to_floatv = lambda x: robj.vectors.FloatVector(x)
-    
-        # if pm0 is not None:
-        rparms['pm0'] = to_floatv(pm0)
-        
-        # if hTeTi is not None:
-        rparms['hTeTi'] = hTeTi
-        
         # if Tnoise is not None:
         rparms['Tnoise'] = Tnoise
         
@@ -602,13 +667,17 @@ class E3DUNC(object):
         
         rparms['phArrTrans'] = robj.vectors.BoolVector((phArrTrans,))
         rparms['phArrRec'] = robj.vectors.BoolVector(phArrRec)
-        rparms['fwhmIonSlab'] = fwhmIonSlab
         rparms['dutyCycle'] = dutyCycle
 
         self.rparms = rparms
+        self._uncparms = uncparms
+        
 
-
-    def calc_uncertainties(self,fwhmRange=2,resR=None,integrationsec=10):
+    def calc_uncertainties(self,fwhmRange=2,resR=None,integrationsec=10,
+                           pm0: tuple = (30.5,16),
+                           hTeTi: int=110,
+                           fwhmIonSlab: int=100,
+):
         """
         resR should be at least as large as fwhmRange
 
@@ -621,6 +690,8 @@ class E3DUNC(object):
 
         """
 
+        # Only do a full recalculation if fwhmRange has changed, or if 
+
         if resR is None:
             resR = fwhmRange
 
@@ -630,7 +701,14 @@ class E3DUNC(object):
         uncdict = dict()
 
         labels = [str(i+1) if i < self.N['rx'] else 'multi' for i in range(Ndict)]
-        hTeTi = self.rparms['hTeTi']
+
+        # hTeTi = self.rparms['hTeTi']
+
+        thisrunparms = dict(hTeTi=hTeTi,
+                            fwhmIonSlab=fwhmIonSlab,
+                            pm0=to_floatv(pm0))
+        for key,var in self.rparms.items():
+            thisrunparms[key] = var
 
         parmnames = ['ne','Te','Ti','Vi']
         nelabels = ['dne'+lab for lab in labels]
@@ -657,7 +735,7 @@ class E3DUNC(object):
 
             out = self._ISgeometry.parameterErrorEstimates(
                 gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange, resR, integrationsec,
-                **self.rparms)
+                **thisrunparms)
 
             los = out[0]
             dNes = [list(los[i])[0] for i in range(len(los))]
@@ -687,43 +765,91 @@ class E3DUNC(object):
             self.uncdict.loc[i,Vilabels] = dVis
             
 
-    def get_los_vectors_ecef(self):
+    def get_los_vectors(self,
+                        coordsys='enu',
+                        SANITYCHECKENU=True):
+        """
+        Get "line-of-sight" vectors for each point and transmitter/receiver pair.
+
+        coordsys: must be one of 'enu' or 'ecef'
+        """
         
-        loslist = dict()
+        assert coordsys in ['enu','ecef']
+
+        loslist = list()
+        txrxlist = list()       # keep track of which pair
         for i,rx in enumerate(self.radarconfig['rx']):
-            los = get_los_vector_ecef(self.points[['xecef','yecef','zecef']].values.T,
-                                      self.radarconfig['tx']['ECEF'],
-                                      rx['ECEF'])
 
-            loslist[i] = los
+            if coordsys == 'ecef':
+                los = get_los_vector_ecef(self.points[['xecef','yecef','zecef']].values.T,
+                                          self.radarconfig['tx']['ECEF'],
+                                          rx['ECEF'])
 
-        return loslist
+            elif coordsys == 'enu':
+                out = get_los_vector_enu(self.points[['xecef','yecef','zecef']].values.T,
+                                         self.radarconfig['tx']['ECEF'],
+                                         rx['ECEF'],
+                                         return_coords=SANITYCHECKENU)
+    
+                if SANITYCHECKENU:
+                    los, gdlat, h = out
+    
+                    # make sure calculations of geodetic altitude differ by less than 1 km
+                    assert np.all(np.abs(self.points['h']-h) < 1)
+    
+                    # make sure calculations of geodetic latitude differ by less than .02
+                    assert np.all(np.abs(gdlat-self.points['gdlat']) < 0.02)
+                    
+                else:
+                    los = out
 
+            txrxlist.append(self.radarconfig['tx']['name']+rx['name'])
+            loslist.append(los)
 
-    def get_los_vectors_enu(self,SANITYCHECK=True):
+        return loslist, txrxlist
         
-        loslist = dict()
-        for i,rx in enumerate(self.radarconfig['rx']):
-            out = get_los_vector_enu(self.points[['xecef','yecef','zecef']].values.T,
-                                     self.radarconfig['tx']['ECEF'],
-                                     rx['ECEF'],
-                                     return_coords=SANITYCHECK)
 
-            if SANITYCHECK:
-                los, gdlat, h = out
+    # def get_los_vectors_ecef(self):
+        
+    #     loslist = list()
+    #     txrxlist = list()       # keep track of which pair
+    #     for i,rx in enumerate(self.radarconfig['rx']):
+    #         los = get_los_vector_ecef(self.points[['xecef','yecef','zecef']].values.T,
+    #                                   self.radarconfig['tx']['ECEF'],
+    #                                   rx['ECEF'])
 
-                # make sure calculations of geodetic altitude differ by less than 1 km
-                assert np.all(np.abs(self.points['h']-h) < 1)
+    #         txrxlist.append(self.radarconfig['tx']['name']+rx['name'])
+    #         loslist.append(los)
 
-                # make sure calculations of geodetic latitude differ by less than .02
-                assert np.all(np.abs(gdlat-self.points['gdlat']) < 0.02)
+    #     return loslist, txrxlist
 
-            else:
-                los = out
 
-            loslist[i] = los
+    # def get_los_vectors_enu(self,SANITYCHECK=True):
+        
+    #     loslist = list()
+    #     txrxlist = list()       # keep track of which pair
+    #     for i,rx in enumerate(self.radarconfig['rx']):
+    #         out = get_los_vector_enu(self.points[['xecef','yecef','zecef']].values.T,
+    #                                  self.radarconfig['tx']['ECEF'],
+    #                                  rx['ECEF'],
+    #                                  return_coords=SANITYCHECK)
 
-        return loslist
+    #         if SANITYCHECK:
+    #             los, gdlat, h = out
+
+    #             # make sure calculations of geodetic altitude differ by less than 1 km
+    #             assert np.all(np.abs(self.points['h']-h) < 1)
+
+    #             # make sure calculations of geodetic latitude differ by less than .02
+    #             assert np.all(np.abs(gdlat-self.points['gdlat']) < 0.02)
+
+    #         else:
+    #             los = out
+
+    #         txrxlist.append(self.radarconfig['tx']['name']+rx['name'])
+    #         loslist.append(los)
+
+    #     return loslist, txrxlist
 
 
 def cartesian_to_spherical_with_position(x, y, z, vx, vy, vz,
