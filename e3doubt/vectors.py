@@ -1,4 +1,6 @@
 import numpy as np
+
+
 def dotprod(a,b):
     """
     dp = dotprod(a,b)

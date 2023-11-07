@@ -1,6 +1,6 @@
 import numpy as np
-from vectors import dotprod,crossprod,vecmag
-from geodesy import geodeticheight2geocentricR,geocentric2geodeticlat
+from e3doubt.vectors import dotprod,crossprod,vecmag
+from e3doubt.geodesy import geodeticheight2geocentricR,geocentric2geodeticlat
 import warnings
 
 # Geomagnetic reference radius:

@@ -39,9 +39,9 @@ from functools import reduce
 from builtins import range
 import warnings
 
-from radar import *
-from geodesy import geod2geoc, ECEF2geodetic, geodeticheight2geocentricR, geodetic2geocentriclat
-from utils import get_supported_sites, coll_freqs
+from e3doubt.radar_utils import *
+from e3doubt.geodesy import geod2geoc, ECEF2geodetic, geodeticheight2geocentricR, geodetic2geocentriclat
+from e3doubt.utils import get_supported_sites, coll_freqs
 
 # Try to pull in importr function from rpy2
 try:
@@ -111,7 +111,7 @@ Given a total time window that is available for integration, how to calculate in
 
 """
 
-class E3DOUBT(object):
+class EXPERIMENT(object):
     """
     
     Parameters

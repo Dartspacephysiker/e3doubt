@@ -17,7 +17,7 @@ Option 0: using pip directly
 
 The package may someday be pip-installable from GitHub directly with::
 
-    pip install "e3doubt[deps-from-github] @ git+https://github.com/Dartspacephysiker/e3doubt.git@main"
+    pip install "e3doubt @ git+https://github.com/Dartspacephysiker/e3doubt.git@main"
 
 This could also be done within a minimal conda environment created with, e.g. ``mamba create -n e3doubt python=3.10 fortran-compiler``
 
@@ -29,7 +29,7 @@ Get the code, create a suitable conda environment, then use pip to install the p
     git clone https://github.com/Dartspacephysiker/e3doubt
     mamba env create -f e3doubt/binder/environment.yml -n e3doubt
     mamba activate e3doubt
-    pip install --editable ./e3doubt[deps-from-github]
+    pip install --editable ./e3doubt
 
 Editable mode (``-e`` or ``--editable``) means that the install is directly linked to the location where you cloned the repository, so you can edit the code.
 

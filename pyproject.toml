@@ -24,7 +24,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
 ]
 dependencies = [
     "apexpy >= 1.0",
@@ -39,17 +39,16 @@ dependencies = [
     "toolz >= 0.8",
 ]
 
-[project.optional-dependencies]
-test = [
-    "pytest >=6",
-]
-dev = [
-    "pytest >=6",
-    "Sphinx",
-]
+# [project.optional-dependencies]
+# test = [
+#     "pytest >=6",
+# ]
+# dev = [
+#     "pytest >=6",
+#     "Sphinx",
+# ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src"]
+include = ["e3doubt"]
 
-[tool.setuptools_scm]

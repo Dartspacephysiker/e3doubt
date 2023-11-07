@@ -6,7 +6,6 @@ WGS84_e2 = 0.00669437999014
 WGS84_a  = 6378.137
 
 
-
 def geocentric2geodeticlat(geocentriclat, degrees = True):
     """ geocentriclat is geocentric latitude (not colat). Output is geodetic latitude, WGS84 is assumed """
     if degrees:
