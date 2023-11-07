@@ -135,7 +135,7 @@ class EXPERIMENT(object):
     Examples
     --------
     >>> # initialize 
-    >>> m = E3DOUBT()
+    >>> m = EXPERIMENT()
     
     >>> # make summary plot:
         
@@ -167,7 +167,7 @@ class EXPERIMENT(object):
                  radarparms = DEFAULT_RADAR_PARMS,
                  default_ionosphere=DEFAULT_IONOSPHERE,
     ):
-        """ __init__ function for E3DOUBT class
+        """ __init__ function for EXPERIMENT class
 
         fwhmRange: Range resolution in ACF decoding [km]
         
@@ -260,8 +260,8 @@ class EXPERIMENT(object):
         # Calculate collision frequency
         self._calc_collfreq()
 
-        print("IRI output, MSIS output, and collision frequencies stored in E3DOUBT.iri, E3DOUBT.msis, and E3DOUBT.points['nuin']")
-        print("Next, you can perform uncertainty calculations with E3DOUBT.calc_uncertainties()")
+        print("IRI output, MSIS output, and collision frequencies stored in EXPERIMENT.iri, EXPERIMENT.msis, and EXPERIMENT.points['nuin']")
+        print("Next, you can perform uncertainty calculations with EXPERIMENT.calc_uncertainties()")
 
 
     def _setup_radarconfig(self, transmitter,fwhmtx, receivers, fwhmrx,
@@ -594,7 +594,7 @@ class EXPERIMENT(object):
         """
     
         # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        # print("Warning! E3DOUBT.init_unc_parms doesn't ... Wait, never mind. This does it _all_.")
+        # print("Warning! EXPERIMENT.init_unc_parms doesn't ... Wait, never mind. This does it _all_.")
         # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         # print("")
 
