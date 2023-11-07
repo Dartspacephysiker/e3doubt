@@ -42,25 +42,25 @@ Once you've got everything downloaded, you'll need to run something like the fol
 
 .. code-block:: python
 
-    >>> # Location of e3d install directory
-    >>> e3ddir = '/SPENCEdata/Research/e3doubt/src/'
-    >>> 
-    >>> # Import things we need from rpy2
-    >>> from rpy2.robjects.packages import importr
-    >>> from rpy2 import robjects as robj
-    >>> import os
-    >>> 
-    >>> base = importr('base')
-    >>> utils = importr('utils')
-    >>> 
-    >>> # # Install dependencies for ISgeometry package 
-    >>> # utils.install_packages("maps")
-    >>> # utils.install_packages("mapdata")
+    # Location of e3d install directory
+    e3ddir = '/SPENCEdata/Research/e3doubt/src/'
+    
+    # Import things we need from rpy2
+    from rpy2.robjects.packages import importr
+    from rpy2 import robjects as robj
+    import os
+    
+    base = importr('base')
+    utils = importr('utils')
+    
+    # # Install dependencies for ISgeometry package 
+    # utils.install_packages("maps")
+    # utils.install_packages("mapdata")
 
-    >>> utils.install_packages(os.path.join(e3ddir,'ISgeometry'),
-    >>>                        repos=robj.NULL,
-    >>>                        dependencies=True,
-    >>>                        type="source")
+    utils.install_packages(os.path.join(e3ddir,'ISgeometry'),
+                           repos=robj.NULL,
+                           dependencies=True,
+                           type="source")
 
 
 Dependencies
