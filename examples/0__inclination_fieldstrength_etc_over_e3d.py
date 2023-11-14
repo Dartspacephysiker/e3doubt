@@ -97,30 +97,10 @@ az0, el0 = get_receiver_az_el_geod(gdlat_t,glon_t,gdlatp[win_ip],glonp[win_ip],h
 # Pick el,az to go along with master point
 # Here we approximate el and az as orthogonal _Cartesian_ coordinates
 
-# Pick points on a circle of radius beamr (measured in degrees), with angle variable beama.
-# beama = 0 corresponds to el = beamr, az = 0
-# beama = 90 corresponds to el = 0, az = beamr
 
-Nsides = 3                      # Triangle
+##############################
+## Make figure, show things
 
-beamR = 1.                      # deg
-beamas = np.arange(0,360,360/Nsides)
-
-azel = []
-
-azel.append((az0,el0))
-
-for beama in beamas:
-    beamar = np.deg2rad(beama)
-    az,el = np.array([np.sin(beamar),np.cos(beamar)])*beamR
-    azel.append((az0+az,el0+el))
-
-
-#Show beams
-
-
-
-# win_ip = np.argmin(dot_bl)
 fig = plt.figure()
 im = plt.contourf(glonp.reshape(dlshape),gdlatp.reshape(dlshape),dot_bl.reshape(dlshape),levels=100)
 plt.contour(glonp.reshape(dlshape),gdlatp.reshape(dlshape),dot_bl.reshape(dlshape),colors='k')

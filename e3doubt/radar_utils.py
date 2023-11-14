@@ -1,6 +1,6 @@
 import numpy as np
 from e3doubt.vectors import dotprod,crossprod,vecmag
-from e3doubt.geodesy import geodeticheight2geocentricR,geocentric2geodeticlat
+from e3doubt.geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc
 import warnings
 
 # Geomagnetic reference radius:
@@ -111,6 +111,33 @@ def _make_equal_length(a,b,DEBUG=False):
     return a,b
 
 
+def get_geodetic_enu_vectors_in_ECEF(gdlatRec, glonRec, hRec=0.):
+
+    # local enu vectors at transceiver
+    e_enu = np.array([1,0,0])
+    n_enu = np.array([0,1,0])
+    u_enu = np.array([0,0,1])
+
+    thetaRec, rRec, n_theta, n_r = geod2geoc(gdlatRec, hRec, n_enu[1], -n_enu[2])
+    thetaRec, rRec, u_theta, u_r = geod2geoc(gdlatRec, hRec, u_enu[1], -u_enu[2])
+    
+    gclatRec = 90.-thetaRec
+
+    # geodetic e,n,u vectors with spherical enu (phi,-theta,r) components
+    e_sphenu = np.array([1,0,0])
+    n_sphenu = np.array([0,-n_theta,n_r])
+    u_sphenu = np.array([0,-u_theta,u_r])
+
+    Rvec_SPHENU_TO_ECEF = ECEFtosphericalENUMatrix(glonRec, gclatRec).squeeze().T
+
+    # geodetic e,n,u vectors with Cartesian ECEF components
+    eR = (Rvec_SPHENU_TO_ECEF@e_sphenu)[:,np.newaxis].T
+    nR = (Rvec_SPHENU_TO_ECEF@n_sphenu)[:,np.newaxis].T
+    uR = (Rvec_SPHENU_TO_ECEF@u_sphenu)[:,np.newaxis].T
+    
+    return eR, nR, uR
+
+
 def get_enu_vectors_cartesian(gclat,gclon,degrees=True):
     """
     Get east, north, up vectors for a given (lat,lon) pair or a list 
@@ -121,6 +148,8 @@ def get_enu_vectors_cartesian(gclat,gclon,degrees=True):
     2022/03/22
     """
     
+    warnings.warn("This thing assumes geocentric coordinates are right! In particular, it assume that the geocentric radial unit vector is the same as the geodetic 'up' vector, which is of course not totally true!")
+
     gclat,gclon = _make_equal_length(gclat,gclon)
 
     if degrees:
@@ -136,9 +165,9 @@ def get_enu_vectors_cartesian(gclat,gclon,degrees=True):
     ct = np.cos(colatr) 
     cp = np.cos(lonr)
 
-    e =  np.vstack([-sp   ,    cp, sp*0]).T
-    n = -np.vstack([-ct*cp, ct*sp,  -st]).T
-    u =  np.vstack([ st*cp, st*sp,   ct]).T
+    e =  np.vstack([-sp   ,     cp, sp*0]).T
+    n = -np.vstack([-ct*cp, -ct*sp,   st]).T
+    u =  np.vstack([ st*cp,  st*sp,   ct]).T
 
     # if e.shape[0] == 1:
     #     e = e.ravel()
@@ -148,21 +177,58 @@ def get_enu_vectors_cartesian(gclat,gclon,degrees=True):
     return e,n,u
 
 
-def get_receiver_az_el(gclatRec,gclonRec,R_S,degrees=True):
+def get_receiver_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=0.):
     """
-    Given the location of the receiver (as a lat,lon pair) and the 
+    Given the location of the receiver (as a gdlat,glon pair) and the 
     location of the scattering point R_S (as an ECEF point), 
-    calculate the receiver's azimuth and elevation.
+    calculate and return the receiver's azimuth and elevation in degrees.
+
+    hRec : float
+            Geodetic altitude of the receiver in km
 
     Spencer Mark Hatch
     2022/03/22
     """
 
-    warnings.warn("This code is not tested!")
+    assert (R_S.size == 3) 
+    if R_S.shape != (1,3):
+        R_S = R_S[np.newaxis,:]
 
-    eR, nR, uR = get_enu_vectors_cartesian(gclatRec,gclonRec,degrees=degrees)
+    # # local enu vectors at transceiver
+    # e_enu = np.array([1,0,0])
+    # n_enu = np.array([0,1,0])
+    # u_enu = np.array([0,0,1])
 
-    R_R = RE * uR
+    # theta, r, n_theta, n_r = geod2geoc(gdlatRec, hRec, n_enu[1], -n_enu[2])
+    # theta, r, u_theta, u_r = geod2geoc(gdlatRec, hRec, u_enu[1], -u_enu[2])
+    
+    theta, r, _, _ = geod2geoc(gdlatRec, hRec, 0., 0.)
+    theta, r, _, _ = geod2geoc(gdlatRec, hRec, 0., 0.)
+
+    rRec, gclatRec = r, 90.-theta
+
+    # # geodetic e,n,u vectors with spherical enu (phi,-theta,r) components
+    # e_sphenu = np.array([1,0,0])
+    # n_sphenu = np.array([0,-n_theta,n_r])
+    # u_sphenu = np.array([0,-u_theta,u_r])
+
+    # Rvec_SPHENU_TO_ECEF = ECEFtosphericalENUMatrix(glonRec, gclatRec).squeeze().T
+
+    # # geodetic e,n,u vectors with Cartesian ECEF components
+    # eR = (Rvec_SPHENU_TO_ECEF@e_sphenu)[:,np.newaxis].T
+    # nR = (Rvec_SPHENU_TO_ECEF@n_sphenu)[:,np.newaxis].T
+    # uR = (Rvec_SPHENU_TO_ECEF@u_sphenu)[:,np.newaxis].T
+
+    eR, nR, uR = get_geodetic_enu_vectors_in_ECEF(gdlatRec, glonRec, hRec=hRec)
+
+    thr = np.deg2rad(theta)
+    phr = np.deg2rad(glonRec)
+    sth, cth = np.sin(thr), np.cos(thr)
+    sph, cph = np.sin(phr), np.cos(phr)
+
+    # NOTE: Here we want to use the geocentric radial vector (in ECEF coords), not geodetic "up" vector!
+    # This 
+    R_R = rRec * np.array([sth*cph, sth*sph, cth])[np.newaxis,:]
 
     dR = R_S-R_R
 
@@ -175,17 +241,66 @@ def get_receiver_az_el(gclatRec,gclonRec,R_S,degrees=True):
     # Get receiver elevation for pointing at R_S
     elR = np.arctan2(dotprod(dR,uR),dotprod(dR,e_azR))
 
-    return azR, elR
+    return np.rad2deg(azR).squeeze(), np.rad2deg(elR).squeeze()
 
 
-def get_range_line(gclat, gclon, az, el, h_km, degrees=True,returnbonus=False):
+def get_receiver_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
+    """
+    Given the location of the receiver (as gdlatRec,glonRec, and possibly hRec) and the 
+    location of the scattering point (as gdlatScat,glonScat, and hScat), 
+    calculate and return the receiver's azimuth and elevation in degrees.
 
-    e, n, u = get_enu_vectors_cartesian(gclat,gclon,degrees=degrees)
+    Spencer Mark Hatch
+    2022/03/22
+    """
 
-    R = u * geodeticheight2geocentricR(geocentric2geodeticlat(gclat), 0.)
-    # R = RE * u
+    thetaScat, rScat, _, _ = geod2geoc(gdlatScat, hScat, 0., 0.,)
 
-    phat = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
+    R_S = rScat * rvec(thetaScat, glonScat)
+
+    return get_receiver_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=hRec)
+
+
+# def get_range_line(gclat, gclon, az, el, h_km, degrees=True,returnbonus=False):
+
+#     warnings.warn("This thing assumes geocentric coordinates are right! In particular, it assume that the geocentric radial unit vector is the same as the geodetic 'up' vector, which is of course not totally true!")
+
+#     # assert 2<0,"Where is this being used? We should standardize and make everything use geodetic coordinates"
+
+#     e, n, u = get_enu_vectors_cartesian(gclat,gclon,degrees=degrees)
+
+#     R = u * geodeticheight2geocentricR(geocentric2geodeticlat(gclat), 0.)
+#     # R = RE * u
+
+#     phat = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
+#     # px, py, pz = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
+
+#     d = height_to_range(h_km, el, degrees=degrees)
+
+#     r_los = R + d[...,np.newaxis] * phat
+
+#     if returnbonus:
+#         return r_los,dict(d=d,phat=phat,R=R,e=e,n=n,u=u)
+#     else:
+#         return r_los
+
+
+def get_range_line(gdlatRec, glonRec, az, el, h_km, hRec=0., degrees=True, returnbonus=False):
+
+    eR, nR, uR = get_geodetic_enu_vectors_in_ECEF(gdlatRec, glonRec, hRec=hRec)
+    
+    thetaRec, rRec, _, _ = geod2geoc(gdlatRec, hRec, 0., 0.)
+
+    # Vector pointing to receiver from Earth center in ECEF (Cartesian) coordinates
+    R = rRec * rvec(thetaRec, glonRec)
+    
+    azr, elr = np.deg2rad(az), np.deg2rad(el)
+
+    azhat = np.sin(azr)[:,np.newaxis] * eR + np.cos(azr)[:,np.newaxis] * nR  # unit vector in azimuth direction
+
+    phat = np.sin(elr)[:,np.newaxis] * uR + np.cos(elr)[:,np.newaxis] * azhat
+
+    # phat = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
     # px, py, pz = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
 
     d = height_to_range(h_km, el, degrees=degrees)
@@ -196,6 +311,41 @@ def get_range_line(gclat, gclon, az, el, h_km, degrees=True,returnbonus=False):
         return r_los,dict(d=d,phat=phat,R=R,e=e,n=n,u=u)
     else:
         return r_los
+
+
+def ECEFtosphericalENUMatrix(lon, gclat):
+    """
+
+    First  row is "East"  (phi)      vector (   phihat = -sinp xhat + cosp yhat)
+    Second row is "North" (90-theta) vector (lambdahat = -sinl cosp xhat - cosl sinp yhat + cosl zhat)
+    Third  row is "Up"    (radial)   vector (     rhat =  cosl cosp xhat + cosl sinp yhat + sinl zhat)
+
+    Here phi    ("p") is the azimuthal coordinate in spherical coordinates
+         lambda ("l") is the 90°-theta latitude angle
+
+
+    Naturally, the columns of this matrix give xhat, yhat, and zhat (in that order) in terms of 
+    ehat, nhat, and uhat
+
+    So! Multiply a vector with ENU components by this matrix to get back a vector in ECEF coordinates
+    """
+
+    phi = np.deg2rad(lon)
+    lamb = np.deg2rad(gclat)
+
+    return np.stack([np.vstack([             -np.sin(phi),               np.cos(phi),  np.zeros(phi.size)]),
+                     np.vstack([-np.sin(lamb)*np.cos(phi), -np.sin(lamb)*np.sin(phi),        np.cos(lamb)]),
+                     np.vstack([ np.cos(lamb)*np.cos(phi),  np.cos(lamb)*np.sin(phi),        np.sin(lamb)])])
+
+
+def rvec(thetad,phid):
+        
+    thr = np.deg2rad(thetad)
+    phr = np.deg2rad(phid)
+    sth, cth = np.sin(thr), np.cos(thr)
+    sph, cph = np.sin(phr), np.cos(phr)
+
+    return np.array([sth*cph, sth*sph, cth])[np.newaxis,:]
 
 
 # if __name__ == "__main__":
@@ -228,7 +378,4 @@ def get_range_line(gclat, gclon, az, el, h_km, degrees=True,returnbonus=False):
 
 #     r_los,d = get_range_line(*TX, az_arr1, el_arr1, h_km,returnbonus=True)
 #     d,phat,R,e,n,u = d['d'], d['phat'], d['R'], d['e'],d['n'],d['u']
-
-
-
 

@@ -40,10 +40,12 @@ from builtins import range
 import warnings
 
 from e3doubt.radar_utils import *
-from e3doubt.geodesy import geod2geoc, ECEF2geodetic, geodeticheight2geocentricR, geodetic2geocentriclat
+from e3doubt.geodesy import geoc2geod, geod2geoc, ECEF2geodetic, geodeticheight2geocentricR, geodetic2geocentriclat
 from e3doubt.utils import get_supported_sites, coll_freqs
 
-# Try to pull in importr function from rpy2
+rc('text', usetex=False)
+
+# Try to pull in importr function and robjects from rpy2
 try:
     from rpy2.robjects.packages import importr
 except:
@@ -55,20 +57,20 @@ except:
     print("Couldn't import 'robjects' from rpy2! Check rpy2 installation")
     robj = None
 
+# Pull in IRI model
 try:
     import iri2016
 except:
     print("Couldn't import python package 'iri2016'! Make sure it's installed")
     iri2016 = None
 
+# Pull in MSIS model
 try:
     from pymsis import msis as pmsis
 except:
     print("Couldn't import python package 'iri2016'! Make sure it's installed")
     pmsis = None
     
-
-rc('text', usetex=False)
 
 to_floatv = lambda x: robj.vectors.FloatVector(x)
 get_gd = lambda trx: (trx['gdlat'],trx['glon'])
@@ -97,55 +99,34 @@ DEFAULT_EL = np.array([76, 73, 72, 70, 69, 67, 66, 66, 69, 71, 73, 73,
                        54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54,
                        76, 82.8, 90])
 DEFAULT_H  = np.array([80,100,120,150,200,250,300,350,400])
+
 # Geomagnetic reference radius:
-REFRE = 6371.2 # km
-
-"""
-TODO
-====
-
-How to handle beams? Should that just be the number of beam/az pairs (default 27)?
-
-Given a total time window that is available for integration, how to calculate integration time for each beam given that we want to divide up time evenly among beams?
-
-
-"""
+# REFRE = 6371.2 # km
 
 class EXPERIMENT(object):
     """
     
     Parameters
-    ---------
+    ------------------
     v : float
         solar wind velocity in km/s
-    By : float
-        IMF GSM y component in nT
-    Bz : float
-        IMF GSM z component in nT
-    tilt : float
-        dipole tilt angle in degrees
-    f107 : float
-        F10.7 index in s.f.u.
-    minlat : float, optional
-        low latitude boundary of grids  (default 60)
-    maxlat : float, optional
-        low latitude boundary of grids  (default 89.99)
-
 
     Examples
-    --------
+    ------------------
     >>> # initialize 
     >>> m = EXPERIMENT()
     
     >>> # make summary plot:
         
 
-    Attributes
-    ----------
-    tor_c : numpy.ndarray
-        vector of cos term coefficents in the toroidal field expansion
-    tor_s : numpy.ndarray
-        vector of sin term coefficents in the toroidal field expansion
+    Public attributes
+    ------------------
+    var : type
+        description
+
+    Private attributes
+    ------------------
+    
     """
 
     def __init__(self,
@@ -186,13 +167,13 @@ class EXPERIMENT(object):
         # Handle input azimuths, elevations, altitudes
         self._setup_az_el_h_arrays(az, el, h)
         
-        self.refdate = refdate
+        self._refdate = refdate
 
         ####################
         # Get ready for IRI and MSIS
         blank = np.zeros(self.N['pt'])*np.nan
 
-        self.iri = pd.DataFrame(
+        self._iri = pd.DataFrame(
             {
                 'ne':np.copy(blank),
                 'Te':np.copy(blank),
@@ -207,7 +188,7 @@ class EXPERIMENT(object):
             }
         )
 
-        self.msis = pd.DataFrame(
+        self._msis = pd.DataFrame(
             dict(
                 rhom=np.copy(blank),
                 N2=np.copy(blank),
@@ -226,9 +207,9 @@ class EXPERIMENT(object):
         self._isCallable_IRI = iri2016 is not None
         self._called_IRI = False
 
-        self.IRI = {i:True for i in IRIINPUTS}
-        self.do_call_IRI = False
-        self.default_ionosphere = {p:default_ionosphere[p] for p in IRIINPUTS}
+        self._IRI = {i:True for i in IRIINPUTS}
+        self._do_call_IRI = False
+        self._default_ionosphere = {p:default_ionosphere[p] for p in IRIINPUTS}
 
         self._isCallable_MSIS = pmsis is not None
         self._called_MSIS = False
@@ -239,10 +220,12 @@ class EXPERIMENT(object):
         ####################
         # Handle R via rpy2
         self._ISgeometry = None
-        self.rparms = None
+        self._rparms = None
         self.init_R()
         self._init_unc_parms()
 
+        self._dfunc = None
+        self._dfunc_kw = None
 
     def run_models(self):
         ####################
@@ -281,8 +264,6 @@ class EXPERIMENT(object):
         phArrTrans = radarparms['phArrTrans']
         phArrRec = radarparms['phArrRec']
 
-        self.tx = transmitter
-    
         self._sites = get_supported_sites()
     
         assert transmitter in list(self._sites.index),f"Requested transmitter site '{transmitter}' not in list of supported sites: {list(self._sites.index)}"
@@ -320,7 +301,7 @@ class EXPERIMENT(object):
                             'minele':mineleRec[rxi],
                             'phArr':phArrRec[rxi]})
     
-        self.radarconfig = {'tx'        : txdict,
+        self._radarconfig = {'tx'        : txdict,
                              'rx'        : rxdicts,
                              'Pt'        : Pt,
                              'fradar'    : fradar,
@@ -348,7 +329,7 @@ class EXPERIMENT(object):
                       el = el.size,
                       h = h.size,
                       tx = 1,
-                      rx = len(self.radarconfig['rx']))
+                      rx = len(self._radarconfig['rx']))
             
         if az.size != el.size:
 
@@ -382,8 +363,8 @@ class EXPERIMENT(object):
             
         ####################
         # Get these points in ECEF coordinates
-        txgdlat, txglon = self._sites.loc[self.radarconfig['tx']['name']]
-        rECEF = get_range_line(geodetic2geocentriclat(txgdlat),
+        txgdlat, txglon = self._sites.loc[self._radarconfig['tx']['name']]
+        rECEF = get_range_line(txgdlat,
                                txglon,
                                az, el, h,
                                returnbonus=False)
@@ -393,7 +374,7 @@ class EXPERIMENT(object):
 
         self.N['pt'] = len(ph)
 
-        self.points = pd.DataFrame(
+        self._points = pd.DataFrame(
             dict(
                 az=az,
                 el=el,
@@ -418,48 +399,48 @@ class EXPERIMENT(object):
         # See if we need iri2016
         # for parm in plasma_parms:
         #     if parm in IRIINPUTS:
-        #         self.IRI[parm] = False
+        #         self._IRI[parm] = False
         #     else:
         #         raise Exception("'plasma_parms' can only contain the following parameters: {:s}".format(", ".join(IRIINPUTS)))
                 
         # for parm in IRIINPUTS:
-        #     self.do_call_IRI = self.do_call_IRI or self.IRI[parm]
+        #     self._do_call_IRI = self._do_call_IRI or self._IRI[parm]
 
-        self.do_call_IRI = True
+        self._do_call_IRI = True
 
-        if self.do_call_IRI:
+        if self._do_call_IRI:
             if not self._isCallable_IRI:
                for parm in plasma_parms:
-                   if self.IRI[parm]:
-                       print(f"Using default for {parm}: {self.default_ionosphere[parm]}")
+                   if self._IRI[parm]:
+                       print(f"Using default for {parm}: {self._default_ionosphere[parm]}")
    
             else:
                 print("Gonna call IRI now")
                 
-                for i in range(len(self.points['az'])):
-                    lat,lon,h = self.points['gdlat'][i],self.points['glon'][i],self.points['h'][i]
+                for i in range(len(self._points['az'])):
+                    lat,lon,h = self._points['gdlat'][i],self._points['glon'][i],self._points['h'][i]
 
-                    # iri_out = iricore.iri(self.refdate, [h, h, 1], lat, lon, version=16)
+                    # iri_out = iricore.iri(self._refdate, [h, h, 1], lat, lon, version=16)
                     
-                    # self.points.loc[i,'ne'] = float(iri_out.edens)
-                    # self.points.loc[i,'Te'] = float(iri_out.etemp)
-                    # self.points.loc[i,'Ti'] = float(iri_out.itemp)
-                    # self.points.loc[i,'Tn'] = float(iri_out.ntemp)
-                    # self.points.loc[i,'fracOplus'] = float(iri_out.o)/100.
+                    # self._points.loc[i,'ne'] = float(iri_out.edens)
+                    # self._points.loc[i,'Te'] = float(iri_out.etemp)
+                    # self._points.loc[i,'Ti'] = float(iri_out.itemp)
+                    # self._points.loc[i,'Tn'] = float(iri_out.ntemp)
+                    # self._points.loc[i,'fracOplus'] = float(iri_out.o)/100.
 
-                    iri_out = iri2016.IRI(self.refdate, [h, h, 1], lat, lon)
+                    iri_out = iri2016.IRI(self._refdate, [h, h, 1], lat, lon)
                     
-                    self.iri.loc[i,'ne'] = iri_out.ne.values[0]
-                    self.iri.loc[i,'Te'] = iri_out.Te.values[0]
-                    self.iri.loc[i,'Ti'] = iri_out.Ti.values[0]
-                    self.iri.loc[i,'Tn'] = iri_out.Tn.values[0]
-                    self.points.loc[i,'fracOplus'] = (iri_out['nO+']/iri_out['ne']).values[0]
-                    self.iri.loc[i,'O+' ] = iri_out['nO+' ].values[0]
-                    self.iri.loc[i,'H+' ] = iri_out['nH+' ].values[0]
-                    self.iri.loc[i,'He+'] = iri_out['nHe+'].values[0]
-                    self.iri.loc[i,'O2+'] = iri_out['nO2+'].values[0]
-                    self.iri.loc[i,'NO+'] = iri_out['nNO+'].values[0]
-                    self.iri.loc[i,'N+' ] = iri_out['nN+' ].values[0]
+                    self._iri.loc[i,'ne'] = iri_out.ne.values[0]
+                    self._iri.loc[i,'Te'] = iri_out.Te.values[0]
+                    self._iri.loc[i,'Ti'] = iri_out.Ti.values[0]
+                    self._iri.loc[i,'Tn'] = iri_out.Tn.values[0]
+                    self._points.loc[i,'fracOplus'] = (iri_out['nO+']/iri_out['ne']).values[0]
+                    self._iri.loc[i,'O+' ] = iri_out['nO+' ].values[0]
+                    self._iri.loc[i,'H+' ] = iri_out['nH+' ].values[0]
+                    self._iri.loc[i,'He+'] = iri_out['nHe+'].values[0]
+                    self._iri.loc[i,'O2+'] = iri_out['nO2+'].values[0]
+                    self._iri.loc[i,'NO+'] = iri_out['nNO+'].values[0]
+                    self._iri.loc[i,'N+' ] = iri_out['nN+' ].values[0]
 
                     if i%10 == 0:
                         print(i)
@@ -472,8 +453,8 @@ class EXPERIMENT(object):
         if self._isCallable_MSIS:
             print("Gonna call MSIS now")
                 
-            dates = [self.refdate]*self.N['pt']
-            lons,lats,alts = self.points[['glon','gdlat','h']].values.T
+            dates = [self._refdate]*self.N['pt']
+            lons,lats,alts = self._points[['glon','gdlat','h']].values.T
             out = pmsis.run(dates, lons, lats, alts) #f107s, f107as, aps)
 
             # From pymsis documentation
@@ -493,8 +474,8 @@ class EXPERIMENT(object):
             
             # rhom, N2, O2, O, He, H, Ar, N, AnomO, NO, Tn = out.T
 
-            for ic,col in enumerate(self.msis.columns):
-                self.msis.loc[self.msis.index,col] = out[:,ic]
+            for ic,col in enumerate(self._msis.columns):
+                self._msis.loc[self._msis.index,col] = out[:,ic]
 
             self._called_MSIS = True
 
@@ -525,9 +506,10 @@ class EXPERIMENT(object):
         Assume that the right thing to do is to calculate an weighted average collision frequency, where the weights are the abundances of NO+, O2+, and O+
         """
         
-        ven, vinNOp, vinO2p, vinOp = coll_freqs(self.msis['N2'],self.msis['O2'],self.msis['O'],self.iri['Te'],self.iri['Ti'],self.msis['Tn'])
+        ven, vinNOp, vinO2p, vinOp = coll_freqs(self._msis['N2'],self._msis['O2'],self._msis['O'],
+                                                self._iri['Te'],self._iri['Ti'],self._msis['Tn'])
         
-        # nuin = vinNOp*self.iri['NO+']+vinO2p*self.iri['O2+']+vinOp*self.iri['O+']
+        # nuin = vinNOp*self._iri['NO+']+vinO2p*self._iri['O2+']+vinOp*self._iri['O+']
         
         # iri_ionmass = {'O+': 15.999,  # in AMU
         #                'H+': 1.00784,
@@ -535,9 +517,11 @@ class EXPERIMENT(object):
         #                'O2+': 15.999*2,
         #                'NO+': 14.0067+15.999,
         #                'N+': 14.0067}
-        # rho_mass = (self.iri['NO+']*iri_ionmass['NO+']+self.iri['O2+']*iri_ionmass['O2+']+self.iri['O+']*iri_ionmass['O+'])/(self.iri['NO+']+self.iri['O2+']+self.iri['O+'])
-        self.points['nuin'] = (vinNOp*self.iri['NO+']+vinO2p*self.iri['O2+']+vinOp*self.iri['O+'])/self.iri['ne']
-                
+        # rho_mass = (self._iri['NO+']*iri_ionmass['NO+']+self._iri['O2+']*iri_ionmass['O2+']+self._iri['O+']*iri_ionmass['O+'])/(self._iri['NO+']+self._iri['O2+']+self._iri['O+'])
+        self._points['nuin'] = (vinNOp*self._iri['NO+']+\
+                                vinO2p*self._iri['O2+']+\
+                                vinOp *self._iri['O+']   )/self._iri['ne']
+
 
     def _init_unc_parms(self,
                        # Tnoise: int=300,
@@ -598,28 +582,28 @@ class EXPERIMENT(object):
         # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         # print("")
 
-        tx = self.radarconfig['tx']
-        rxs = self.radarconfig['rx']
+        tx = self._radarconfig['tx']
+        rxs = self._radarconfig['rx']
             
-        Tnoise = self.radarconfig['Tnoise']
-        Pt = self.radarconfig['Pt']
+        Tnoise = self._radarconfig['Tnoise']
+        Pt = self._radarconfig['Pt']
 
         locTrans = get_gd(tx)
         locRec = tuple([get_gd(rx) for rx in rxs])
 
         fwhmTrans = tx['fwhm']
         fwhmRec = tuple([rx['fwhm'] for rx in rxs])
-        RXduty = self.radarconfig['RXduty']
+        RXduty = self._radarconfig['RXduty']
 
-        mineleTrans = self.radarconfig['tx']['minele']
+        mineleTrans = self._radarconfig['tx']['minele']
         mineleRec = tuple([rx['minele'] for rx in rxs])
 
-        fradar = self.radarconfig['fradar']
+        fradar = self._radarconfig['fradar']
 
         phArrTrans = tx['phArr']
         phArrRec = tuple([rx['phArr'] for rx in rxs])
 
-        dutyCycle = self.radarconfig['dutyCycle']
+        dutyCycle = self._radarconfig['dutyCycle']
 
         # store a copy of dat
         uncparms = dict(
@@ -669,11 +653,12 @@ class EXPERIMENT(object):
         rparms['phArrRec'] = robj.vectors.BoolVector(phArrRec)
         rparms['dutyCycle'] = dutyCycle
 
-        self.rparms = rparms
+        self._rparms = rparms
         self._uncparms = uncparms
         
 
     def calc_uncertainties(self,fwhmRange=2,resR=None,integrationsec=10,
+                           force_recalc=False,
                            pm0: tuple = (30.5,16),
                            hTeTi: int=110,
                            fwhmIonSlab: int=100,
@@ -690,80 +675,155 @@ class EXPERIMENT(object):
 
         """
 
-        # Only do a full recalculation if fwhmRange has changed, or if 
-
         if resR is None:
             resR = fwhmRange
 
-        builderarr = np.zeros(self.N['pt'])*np.nan
-
-        Ndict = self.N['rx']+1
-        uncdict = dict()
-
-        labels = [str(i+1) if i < self.N['rx'] else 'multi' for i in range(Ndict)]
-
-        # hTeTi = self.rparms['hTeTi']
-
-        thisrunparms = dict(hTeTi=hTeTi,
-                            fwhmIonSlab=fwhmIonSlab,
-                            pm0=to_floatv(pm0))
-        for key,var in self.rparms.items():
-            thisrunparms[key] = var
-
-        parmnames = ['ne','Te','Ti','Vi']
-        nelabels = ['dne'+lab for lab in labels]
-        Telabels = ['dTe'+lab for lab in labels]
-        Tilabels = ['dTi'+lab for lab in labels]
-        Vilabels = ['dVi'+lab for lab in labels]
-        for parm in parmnames:
-            
-            for i in range(Ndict):
-                uncdict['d'+parm+labels[i]] = np.copy(builderarr)
+        # Check if we need to run a full calculation of uncertainties
         
-        self.uncdict = pd.DataFrame(uncdict)
+        # Full calculation not needed if previous run exists and integrationsec is the only thing that has changed
+        existing_run = self._dfunc is not None
+        if force_recalc or (not existing_run):
+            do_run = True
+        else:
 
-        ##############################
-        # Now get uncertainties for everything
-        for i,point in self.points.iterrows():
+            do_run = False
+            # If any of these are different between this call and the previous, do a full recalculation
+            RERUN_KEYS = ['fwhmRange','resR','pm0','hTeTi','fwhmIonSlab']
 
-            if i%10 == 0:
-                print(i)
+            # What has changed?
 
-            gclat, glon, h, fracOp, nuin = point[['gclat','glon','h','fracOplus','nuin']]
+            dfunc_kw = dict(fwhmRange=fwhmRange,
+                            resR=resR,
+                            integrationsec=integrationsec,
+                            pm0=pm0,
+                            hTeTi=hTeTi,
+                            fwhmIonSlab=fwhmIonSlab,
+            )
+            
+            different_keys = []
+            
+            for k in dfunc_kw:
+                
+                if dfunc_kw[k] != self._dfunc_kw[k]:
+                    different_keys.append(k)
 
-            Ne, Ti, Te = self.iri.iloc[i][['ne','Ti','Te']]
+            if len(different_keys) > 0:
+                print("differences between this run and last run: ", different_keys)
+                print(f"{'Key':20s} : {'Existing':20s} {'Requested':20s}")
+                for k in different_keys:
+                    print(f"{k:20s} : {str(self._dfunc_kw[k]):20s} {str(dfunc_kw[k]):20s}")
 
-            out = self._ISgeometry.parameterErrorEstimates(
-                gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange, resR, integrationsec,
-                **thisrunparms)
+                if any([k in different_keys for k in RERUN_KEYS]):
+                    do_run = True
+                    print("Re-running uncertainty calculation with new parameters!")
 
-            los = out[0]
-            dNes = [list(los[i])[0] for i in range(len(los))]
-            dTis = [list(los[i])[1] for i in range(len(los))]
+                elif 'integrationsec' in different_keys:
+                    do_run = False
+                   
+                    dtau = fwhmRange*1000/3e8*2
+                    dutyCycle = self._radarconfig['dutyCycle']
 
-            dNes.append(list(out[1])[0])
-            dTis.append(list(out[1])[1])
+                    integfac = np.sqrt(dtau/dutyCycle/integrationsec)
 
-            if h > hTeTi:
-                # got dNe, dTi, dTe, dVi
-                dTes = [list(los[i])[2] for i in range(len(los))] 
-                dVis = [list(los[i])[3] for i in range(len(los))]
+                    dtau_previous = self._dfunc_kw['fwhmRange']*1000/3e8*2
+                    integfac_previous = np.sqrt(dtau_previous/dutyCycle/self._dfunc_kw['integrationsec'])
 
-                dTes.append(list(out[1])[2])
-                dVis.append(list(out[1])[3])
+                    scale = integfac/integfac_previous
+                    
+                    print(f"Returning results from before, but with uncertainties scaled by a factor of {scale:.5f}")
+                    dfunc = self._dfunc.copy()
+                    for c in dfunc:
+                        dfunc.loc[:,c] = dfunc[c].values*scale
+
+                    return dfunc
 
             else:
-                # got dNe, dTi, dVi
-                dTes = dTis
-                dVis = [list(los[i])[2] for i in range(len(los))]
                     
-                dVis.append(list(out[1])[2])
+                return self._dfunc
 
-            self.uncdict.loc[i,nelabels] = dNes
-            self.uncdict.loc[i,Telabels] = dTes
-            self.uncdict.loc[i,Tilabels] = dTis
-            self.uncdict.loc[i,Vilabels] = dVis
+        if do_run:
+
+            builderarr = np.zeros(self.N['pt'])*np.nan
             
+            Ndict = self.N['rx']+1  # Number of uncertainty estimates is "N receivers" plus one for multistatic estimate
+            dfunc = dict() #data frame of uncertainties
+            
+            labels = [str(i+1) if i < self.N['rx'] else 'multi' for i in range(Ndict)]
+            
+            # hTeTi = self._rparms['hTeTi']
+            
+            runparms = dict(hTeTi=hTeTi,
+                                fwhmIonSlab=fwhmIonSlab,
+                                pm0=to_floatv(pm0))
+            for key,var in self._rparms.items():
+                runparms[key] = var
+            
+            parmnames = ['ne','Te','Ti','Vi']
+            nelabels = ['dne'+lab for lab in labels]
+            Telabels = ['dTe'+lab for lab in labels]
+            Tilabels = ['dTi'+lab for lab in labels]
+            Vilabels = ['dVi'+lab for lab in labels]
+            for parm in parmnames:
+                
+                for i in range(Ndict):
+                    dfunc['d'+parm+labels[i]] = np.copy(builderarr)
+            
+            dfunc = pd.DataFrame(dfunc)
+            
+            ##############################
+            # Now get uncertainties for everything
+            for i,point in self._points.iterrows():
+            
+                if i%10 == 0:
+                    print(i)
+            
+                gclat, glon, h, fracOp, nuin = point[['gclat','glon','h','fracOplus','nuin']]
+            
+                Ne, Ti, Te = self._iri.iloc[i][['ne','Ti','Te']]
+            
+                out = self._ISgeometry.parameterErrorEstimates(
+                    gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange, resR, integrationsec,
+                    **runparms)
+            
+                los = out[0]
+                dNes = [list(los[i])[0] for i in range(len(los))]
+                dTis = [list(los[i])[1] for i in range(len(los))]
+            
+                dNes.append(list(out[1])[0])
+                dTis.append(list(out[1])[1])
+            
+                if h > hTeTi:
+                    # got dNe, dTi, dTe, dVi
+                    dTes = [list(los[i])[2] for i in range(len(los))] 
+                    dVis = [list(los[i])[3] for i in range(len(los))]
+            
+                    dTes.append(list(out[1])[2])
+                    dVis.append(list(out[1])[3])
+            
+                else:
+                    # got dNe, dTi, dVi
+                    dTes = dTis
+                    dVis = [list(los[i])[2] for i in range(len(los))]
+                        
+                    dVis.append(list(out[1])[2])
+            
+                dfunc.loc[i,nelabels] = dNes
+                dfunc.loc[i,Telabels] = dTes
+                dfunc.loc[i,Tilabels] = dTis
+                dfunc.loc[i,Vilabels] = dVis
+                
+            # store dfunc and last run options
+            self._dfunc = dfunc
+            self._dfunc_kw = dict(fwhmRange=fwhmRange,
+                                  resR=resR,
+                                  integrationsec=integrationsec,
+                                  pm0=pm0,
+                                  hTeTi=hTeTi,
+                                  fwhmIonSlab=fwhmIonSlab,
+                                  )
+            
+            return dfunc
+
 
     def get_los_vectors(self,
                         coordsys='enu',
@@ -778,16 +838,16 @@ class EXPERIMENT(object):
 
         loslist = list()
         txrxlist = list()       # keep track of which pair
-        for i,rx in enumerate(self.radarconfig['rx']):
+        for i,rx in enumerate(self._radarconfig['rx']):
 
             if coordsys == 'ecef':
-                los = get_los_vector_ecef(self.points[['xecef','yecef','zecef']].values.T,
-                                          self.radarconfig['tx']['ECEF'],
+                los = get_los_vector_ecef(self._points[['xecef','yecef','zecef']].values.T,
+                                          self._radarconfig['tx']['ECEF'],
                                           rx['ECEF'])
 
             elif coordsys == 'enu':
-                out = get_los_vector_enu(self.points[['xecef','yecef','zecef']].values.T,
-                                         self.radarconfig['tx']['ECEF'],
+                out = get_los_vector_enu(self._points[['xecef','yecef','zecef']].values.T,
+                                         self._radarconfig['tx']['ECEF'],
                                          rx['ECEF'],
                                          return_coords=SANITYCHECKENU)
     
@@ -795,30 +855,88 @@ class EXPERIMENT(object):
                     los, gdlat, h = out
     
                     # make sure calculations of geodetic altitude differ by less than 1 km
-                    assert np.all(np.abs(self.points['h']-h) < 1)
+                    assert np.all(np.abs(self._points['h']-h) < 1)
     
                     # make sure calculations of geodetic latitude differ by less than .02
-                    assert np.all(np.abs(gdlat-self.points['gdlat']) < 0.02)
+                    assert np.all(np.abs(gdlat-self._points['gdlat']) < 0.02)
                     
                 else:
                     los = out
 
-            txrxlist.append(self.radarconfig['tx']['name']+rx['name'])
+            txrxlist.append(self._radarconfig['tx']['name']+rx['name'])
             loslist.append(los)
 
         return loslist, txrxlist
         
 
+    def velocity_cov_matrix(self,
+                            los=None,
+                            dv=None,
+                            Cminv=0.,
+                            coordsys='enu'):
+        """
+        los     : np.ndarray, shape (P, 3, N) with P number of transmitter-receiver pairs and N number of points
+                matrix of line-of-sight vectors
+    
+        dv      : np.ndarray, shape (P, N)
+                uncertainty of each los velocity estimate (assumed to be independent of the other estimates)
+    
+        Cminv   : UNUSED
+                could be used to include effects of regularization of some sort
+    
+        Returns
+        ==========
+        covmats : np.ndarray, shape (3, 3, N)
+                covariance matrices of each velocity estimate
+        """
+    
+        if los is None:
+            los, txrxpairs = self.get_los_vectors(coordsys=coordsys)
+            los = np.stack(los)
+
+        if dv is None:
+            dv = self._dfunc[['dVi1','dVi2','dVi3']].values.T
+
+        assert los.ndim == 3 and dv.ndim == 2
+        assert (los.shape[0] == dv.shape[0]) & (los.shape[2] == dv.shape[1]) & (los.shape[1] == 3)
+    
+        P,_,N = los.shape
+    
+        Cminv = 0.
+        covmat = []
+        for n in range(N):
+            covmat.append( np.linalg.inv(los[:,:,n].T@np.diag(1/dv[:,n])@los[:,:,n] + Cminv) )
+    
+    
+        return np.transpose(np.stack(covmat),axes=[1,2,0])
+    
+    
+    def get_point_df(self):
+
+        return self._points
+
+    def get_radarconfig(self):
+
+        return self._radarconfig
+
+    def get_iri(self):
+
+        return self._iri
+
+    def get_msis(self):
+
+        return self._msis
+
     # def get_los_vectors_ecef(self):
         
     #     loslist = list()
     #     txrxlist = list()       # keep track of which pair
-    #     for i,rx in enumerate(self.radarconfig['rx']):
-    #         los = get_los_vector_ecef(self.points[['xecef','yecef','zecef']].values.T,
-    #                                   self.radarconfig['tx']['ECEF'],
+    #     for i,rx in enumerate(self._radarconfig['rx']):
+    #         los = get_los_vector_ecef(self._points[['xecef','yecef','zecef']].values.T,
+    #                                   self._radarconfig['tx']['ECEF'],
     #                                   rx['ECEF'])
 
-    #         txrxlist.append(self.radarconfig['tx']['name']+rx['name'])
+    #         txrxlist.append(self._radarconfig['tx']['name']+rx['name'])
     #         loslist.append(los)
 
     #     return loslist, txrxlist
@@ -828,9 +946,9 @@ class EXPERIMENT(object):
         
     #     loslist = list()
     #     txrxlist = list()       # keep track of which pair
-    #     for i,rx in enumerate(self.radarconfig['rx']):
-    #         out = get_los_vector_enu(self.points[['xecef','yecef','zecef']].values.T,
-    #                                  self.radarconfig['tx']['ECEF'],
+    #     for i,rx in enumerate(self._radarconfig['rx']):
+    #         out = get_los_vector_enu(self._points[['xecef','yecef','zecef']].values.T,
+    #                                  self._radarconfig['tx']['ECEF'],
     #                                  rx['ECEF'],
     #                                  return_coords=SANITYCHECK)
 
@@ -838,15 +956,15 @@ class EXPERIMENT(object):
     #             los, gdlat, h = out
 
     #             # make sure calculations of geodetic altitude differ by less than 1 km
-    #             assert np.all(np.abs(self.points['h']-h) < 1)
+    #             assert np.all(np.abs(self._points['h']-h) < 1)
 
     #             # make sure calculations of geodetic latitude differ by less than .02
-    #             assert np.all(np.abs(gdlat-self.points['gdlat']) < 0.02)
+    #             assert np.all(np.abs(gdlat-self._points['gdlat']) < 0.02)
 
     #         else:
     #             los = out
 
-    #         txrxlist.append(self.radarconfig['tx']['name']+rx['name'])
+    #         txrxlist.append(self._radarconfig['tx']['name']+rx['name'])
     #         loslist.append(los)
 
     #     return loslist, txrxlist
@@ -857,7 +975,7 @@ def cartesian_to_spherical_with_position(x, y, z, vx, vy, vz,
     """
     returns array of spherical components of vector given by vx, vy, and vz with shape (3,N)
 
-    Written mostly by ChatGPT3.5!
+    Written mostly by ChatGPT3.5 (for fun)!
     """
     r = np.sqrt(x**2 + y**2 + z**2)
     theta = np.arccos(z / r)
@@ -871,6 +989,35 @@ def cartesian_to_spherical_with_position(x, y, z, vx, vy, vz,
         return np.vstack([vr, vtheta, vphi]), np.vstack([r, theta, phi])
     else:
         return np.vstack([vr, vtheta, vphi])
+
+
+# def spherical_to_cartesian_with_position(r, th, phi, vr, vth, vphi,
+#                                          return_coords=True):
+#     """
+#     returns array of ECEF components of vector given by vr, vtheta, and vphi with shape (3,N)
+#     """
+
+#     thr = np.deg2rad(th)
+#     phir = np.deg2rad(phi)
+
+#     x = r * np.sin(thr) * np.cos(phir)
+#     y = r * np.sin(thr) * np.sin(phir)
+#     z = r * np.cos(thr)
+
+#     vx = 
+
+#     r = np.sqrt(x**2 + y**2 + z**2)
+#     theta = np.arccos(z / r)
+#     phi = np.arctan2(y, x)
+
+#     vr = (vx * x + vy * y + vz * z) / r
+#     vtheta = (vx * np.cos(phi) * np.cos(theta) + vy * np.sin(phi) * np.cos(theta) - vz * np.sin(theta))
+#     vphi = (-vx * np.sin(phi) + vy * np.cos(phi))
+
+#     if return_coords:
+#         return np.vstack([vr, vtheta, vphi]), np.vstack([r, theta, phi])
+#     else:
+#         return np.vstack([vr, vtheta, vphi])
 
 
 def get_los_vector_ecef(p, t, r,
@@ -901,8 +1048,6 @@ def get_los_vector_enu(p, t, r,
                        normalize=True,
                        return_coords=False):
     
-    from geodesy import geoc2geod
-
     los = get_los_vector_ecef(p, t, r,
                               normalize=normalize)
 
