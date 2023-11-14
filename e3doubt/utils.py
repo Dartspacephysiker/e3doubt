@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import ppigrf
 import os
 
 basepath = os.path.dirname(__file__)
@@ -53,3 +54,61 @@ def coll_freqs(nN2,nO2,nO,Te,Ti,Tn):
     vin3 = 6.82e-16*nN2 + 6.66e-16*nO2 	+ 3.67e-17*nO * np.sqrt(Tr)*(1-0.064*np.log10(Tr))**2
 	
     return ven, vin1, vin2, vin3
+
+
+def field_geometry_lonlat(lon,lat,date,h_km=0):
+    """
+    Calculate inclination, declination, and dip latitude 
+    for given location(s) using IGRF.
+
+    Example:
+    --------
+    inc, dec, diplat = field_geometry_lonlat()
+
+    Parameters
+    ----------
+    lon : array
+        longitude [deg], postiive east, of IGRF calculation
+    lat : array
+        geodetic latitude [deg] of IGRF calculation
+    date : date(s)
+        one or more dates to evaluate IGRF coefficients
+
+    Keywords
+    ----------
+    h : array
+        height [km] above ellipsoid for IGRF calculation
+
+    Returns
+    -------
+    inc    : array
+        Geomagnetic field inclination [degrees]
+    dec    : array
+        Geomagnetic field declination [degrees]
+    diplat : array
+        Geomagnetic dip latitude      [degrees]
+    
+
+    Definitions
+    -----------
+    Inclination : Angle made with horizontal by Earth's magnetic field lines
+    Declination : Angle between geodetic north and magnetic north
+    Dip latitude: Latitude of given dip angle (related to magnetic latitude?)
+    S. M. Hatch
+    Mar 2022
+    
+    """
+
+    Be, Bn, Bu = ppigrf.igrf(lon, lat, h_km, date) # returns east, north, up
+
+    Z = -Bu
+    H = np.sqrt(Be**2+Bn**2)
+
+    inc    = np.arctan2(Z,H)
+    dec    = np.arccos(Bn/H)
+    diplat = np.arctan2(Z,2*H)
+    
+    inc,dec,diplat = map(lambda x: np.ravel(np.rad2deg(x)), [inc,dec,diplat])
+
+    return inc, dec, diplat
+

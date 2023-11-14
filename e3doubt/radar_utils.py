@@ -63,7 +63,7 @@ def point_vector_cartesian(gclat,gclon,az,el,degrees=True):
     return np.vstack([px,py,pz]).T
 
 
-def height_to_range(h_km,el,degrees=True):
+def height_to_range(h_km,el,gdlat=None,degrees=True):
     """
     Get the distance from a point on the earth's (assumed perfectly 
     spherical) surface to a particular altitude given the elevation.
@@ -77,7 +77,12 @@ def height_to_range(h_km,el,degrees=True):
     else:
         elr = el
 
-    return np.sqrt(RE**2 * np.sin(elr)**2 + 2*RE*h_km + h_km**2) - RE*np.sin(elr)
+    if gdlat is None:
+        R = RE
+    else:
+        R = geodeticheight2geocentricR(gdlat,0.)
+
+    return np.sqrt(R**2 * np.sin(elr)**2 + 2*R*h_km + h_km**2) - R*np.sin(elr)
 
 
 def _make_equal_length_dict(d,DEBUG=False):
@@ -303,7 +308,7 @@ def get_range_line(gdlatRec, glonRec, az, el, h_km, hRec=0., degrees=True, retur
     # phat = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
     # px, py, pz = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
 
-    d = height_to_range(h_km, el, degrees=degrees)
+    d = height_to_range(h_km, el, gdlat=gdlatRec, degrees=degrees)
 
     r_los = R + d[...,np.newaxis] * phat
 
