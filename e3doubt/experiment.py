@@ -135,7 +135,6 @@ class EXPERIMENT(object):
                  h=DEFAULT_H,
                  refdate=datetime(2017,8,5,22,0,0),  # IRI reference date (important date)
                  fwhmres=3,
-                 plasma_parms=dict(),
                  fill_IRI=True,  # If not all plasma parms provided, fill with IRI
                  dwell_times=None,
                  bit_length=None,
@@ -152,11 +151,11 @@ class EXPERIMENT(object):
 
         fwhmRange: Range resolution in ACF decoding [km]
         
-        plasma_parms: The idea is to allow the user to provide a custom set of ionosphere parameters instead of running IRI and MSIS
+        If you wish to set values of ionospheric and atmospheric parameters manually, use the set_ionos and set_atmos methods.
 
         """
 
-        print("WARNING: Haven't implemented/stored following keywords: dwell_times, bit_length, beam_width, plasma_parms")
+        print("WARNING: Haven't implemented/stored following keywords: bit_length, beam_width")
 
         ####################
         # Make sure we have the location of transmitter and receiver(s) that the user wants
@@ -165,7 +164,7 @@ class EXPERIMENT(object):
     
         ####################
         # Handle input azimuths, elevations, altitudes
-        self._setup_az_el_h_arrays(az, el, h)
+        self._setup_az_el_h_arrays(az, el, h, dwell_times)
         
         self._refdate = refdate
 
@@ -173,7 +172,7 @@ class EXPERIMENT(object):
         # Get ready for IRI and MSIS
         blank = np.zeros(self.N['pt'])*np.nan
 
-        self._iri = pd.DataFrame(
+        self._ionos = pd.DataFrame(
             {
                 'ne':np.copy(blank),
                 'Te':np.copy(blank),
@@ -184,11 +183,13 @@ class EXPERIMENT(object):
                 'He+':np.copy(blank),
                 'O2+':np.copy(blank),
                 'NO+':np.copy(blank),
-                'N+' :np.copy(blank)
+                'N+' :np.copy(blank),
+                'fracO+':np.copy(blank),
+                'nuin':np.copy(blank)
             }
         )
 
-        self._msis = pd.DataFrame(
+        self._atmos = pd.DataFrame(
             dict(
                 rhom=np.copy(blank),
                 N2=np.copy(blank),
@@ -217,6 +218,11 @@ class EXPERIMENT(object):
         self._isCallable_R = (importr is not None) and (robj is not None)
         assert self._isCallable_R,"No point in going further, R can't be called from python"
 
+        # These members are switched to "True" when
+        # user changes 
+        self._isChanged_atmos = False
+        self._isChanged_ionos = False
+
         ####################
         # Handle R via rpy2
         self._ISgeometry = None
@@ -231,7 +237,6 @@ class EXPERIMENT(object):
         ####################
         # Handle model ionosphere
 
-        # self._run_IRI(plasma_parms)
         self._run_IRI()
 
         ####################
@@ -243,7 +248,7 @@ class EXPERIMENT(object):
         # Calculate collision frequency
         self._calc_collfreq()
 
-        print("IRI output, MSIS output, and collision frequencies stored in EXPERIMENT.iri, EXPERIMENT.msis, and EXPERIMENT.points['nuin']")
+        print("IRI output, MSIS output, and collision frequencies stored in EXPERIMENT._ionos, EXPERIMENT._atmos, and EXPERIMENT._ionos['nuin']")
         print("Next, you can perform uncertainty calculations with EXPERIMENT.calc_uncertainties()")
 
 
@@ -253,9 +258,6 @@ class EXPERIMENT(object):
         Make dictionaries containing information about transmitter, receivers, and other radar parameters
         """
 
-        # Pt, fradar, Tnoise, dutyCycle, RXduty, tau0 = (radarparms[name] for name in
-        #                                                ["Pt", "fradar", "Tnoise",
-        #                                                 "dutyCycle", "RXduty", "tau0"])
         Pt, fradar, Tnoise, dutyCycle, RXduty = (radarparms[name] for name in
                                                  ["Pt", "fradar", "Tnoise",
                                                   "dutyCycle", "RXduty"])
@@ -312,18 +314,7 @@ class EXPERIMENT(object):
         }
 
 
-    def _setup_az_el_h_arrays(self, az, el, h):
-
-        # if az is None:
-            
-        #     az = DEFAULT_AZ
-
-        # if el is None:
-
-        #     el = DEFAULT_EL
-
-        # if h is None:
-        #     h = DEFAULT_H
+    def _setup_az_el_h_arrays(self, az, el, h, dwell_times):
 
         self.N = dict(az = az.size,
                       el = el.size,
@@ -374,6 +365,14 @@ class EXPERIMENT(object):
 
         self.N['pt'] = len(ph)
 
+        if dwell_times is None:
+            dwell_times = np.ones(self.N['pt'])
+
+        # Normalize dwell_times so that sum is one.
+        # Idea is that user provides a single total integration time, and that time is
+        # divided among the beams according to the fractions implied by dwell_times.
+        dwell_times = dwell_times/np.sum(dwell_times)  
+
         self._points = pd.DataFrame(
             dict(
                 az=az,
@@ -382,65 +381,44 @@ class EXPERIMENT(object):
                 gdlat=pgdlat,
                 gclat=pgclat,
                 glon=pglon,
-                ph=ph,
+                # ph=ph,
                 xecef=rECEF[:,0],
                 yecef=rECEF[:,1],
                 zecef=rECEF[:,2],
-                fracOplus=np.zeros(self.N['pt'])*np.nan,
-
+                dwell_time=dwell_times,
             )
         )
 
 
-    # def _run_IRI(self,plasma_parms):
     def _run_IRI(self):
-
-        # IDEA: check if we need to calculate parameters from IRI. Not necessary if user has provided them all
-        # See if we need iri2016
-        # for parm in plasma_parms:
-        #     if parm in IRIINPUTS:
-        #         self._IRI[parm] = False
-        #     else:
-        #         raise Exception("'plasma_parms' can only contain the following parameters: {:s}".format(", ".join(IRIINPUTS)))
-                
-        # for parm in IRIINPUTS:
-        #     self._do_call_IRI = self._do_call_IRI or self._IRI[parm]
 
         self._do_call_IRI = True
 
         if self._do_call_IRI:
             if not self._isCallable_IRI:
-               for parm in plasma_parms:
-                   if self._IRI[parm]:
-                       print(f"Using default for {parm}: {self._default_ionosphere[parm]}")
-   
+               # for parm in plasma_parms:
+               #     if self._IRI[parm]:
+               #         print(f"Using default for {parm}: {self._default_ionosphere[parm]}")
+                assert 2<0,"Can't call IRI!"
             else:
                 print("Gonna call IRI now")
                 
                 for i in range(len(self._points['az'])):
                     lat,lon,h = self._points['gdlat'][i],self._points['glon'][i],self._points['h'][i]
 
-                    # iri_out = iricore.iri(self._refdate, [h, h, 1], lat, lon, version=16)
-                    
-                    # self._points.loc[i,'ne'] = float(iri_out.edens)
-                    # self._points.loc[i,'Te'] = float(iri_out.etemp)
-                    # self._points.loc[i,'Ti'] = float(iri_out.itemp)
-                    # self._points.loc[i,'Tn'] = float(iri_out.ntemp)
-                    # self._points.loc[i,'fracOplus'] = float(iri_out.o)/100.
-
                     iri_out = iri2016.IRI(self._refdate, [h, h, 1], lat, lon)
                     
-                    self._iri.loc[i,'ne'] = iri_out.ne.values[0]
-                    self._iri.loc[i,'Te'] = iri_out.Te.values[0]
-                    self._iri.loc[i,'Ti'] = iri_out.Ti.values[0]
-                    self._iri.loc[i,'Tn'] = iri_out.Tn.values[0]
-                    self._points.loc[i,'fracOplus'] = (iri_out['nO+']/iri_out['ne']).values[0]
-                    self._iri.loc[i,'O+' ] = iri_out['nO+' ].values[0]
-                    self._iri.loc[i,'H+' ] = iri_out['nH+' ].values[0]
-                    self._iri.loc[i,'He+'] = iri_out['nHe+'].values[0]
-                    self._iri.loc[i,'O2+'] = iri_out['nO2+'].values[0]
-                    self._iri.loc[i,'NO+'] = iri_out['nNO+'].values[0]
-                    self._iri.loc[i,'N+' ] = iri_out['nN+' ].values[0]
+                    self._ionos.loc[i,'ne'] = iri_out.ne.values[0]
+                    self._ionos.loc[i,'Te'] = iri_out.Te.values[0]
+                    self._ionos.loc[i,'Ti'] = iri_out.Ti.values[0]
+                    self._ionos.loc[i,'Tn'] = iri_out.Tn.values[0]
+                    self._ionos.loc[i,'fracO+'] = (iri_out['nO+']/iri_out['ne']).values[0]
+                    self._ionos.loc[i,'O+' ] = iri_out['nO+' ].values[0]
+                    self._ionos.loc[i,'H+' ] = iri_out['nH+' ].values[0]
+                    self._ionos.loc[i,'He+'] = iri_out['nHe+'].values[0]
+                    self._ionos.loc[i,'O2+'] = iri_out['nO2+'].values[0]
+                    self._ionos.loc[i,'NO+'] = iri_out['nNO+'].values[0]
+                    self._ionos.loc[i,'N+' ] = iri_out['nN+' ].values[0]
 
                     if i%10 == 0:
                         print(i)
@@ -474,8 +452,8 @@ class EXPERIMENT(object):
             
             # rhom, N2, O2, O, He, H, Ar, N, AnomO, NO, Tn = out.T
 
-            for ic,col in enumerate(self._msis.columns):
-                self._msis.loc[self._msis.index,col] = out[:,ic]
+            for ic,col in enumerate(self._atmos.columns):
+                self._atmos.loc[self._atmos.index,col] = out[:,ic]
 
             self._called_MSIS = True
 
@@ -506,10 +484,10 @@ class EXPERIMENT(object):
         Assume that the right thing to do is to calculate an weighted average collision frequency, where the weights are the abundances of NO+, O2+, and O+
         """
         
-        ven, vinNOp, vinO2p, vinOp = coll_freqs(self._msis['N2'],self._msis['O2'],self._msis['O'],
-                                                self._iri['Te'],self._iri['Ti'],self._msis['Tn'])
+        ven, vinNOp, vinO2p, vinOp = coll_freqs(self._atmos['N2'],self._atmos['O2'],self._atmos['O'],
+                                                self._ionos['Te'],self._ionos['Ti'],self._atmos['Tn'])
         
-        # nuin = vinNOp*self._iri['NO+']+vinO2p*self._iri['O2+']+vinOp*self._iri['O+']
+        # nuin = vinNOp*self._ionos['NO+']+vinO2p*self._ionos['O2+']+vinOp*self._ionos['O+']
         
         # iri_ionmass = {'O+': 15.999,  # in AMU
         #                'H+': 1.00784,
@@ -517,10 +495,10 @@ class EXPERIMENT(object):
         #                'O2+': 15.999*2,
         #                'NO+': 14.0067+15.999,
         #                'N+': 14.0067}
-        # rho_mass = (self._iri['NO+']*iri_ionmass['NO+']+self._iri['O2+']*iri_ionmass['O2+']+self._iri['O+']*iri_ionmass['O+'])/(self._iri['NO+']+self._iri['O2+']+self._iri['O+'])
-        self._points['nuin'] = (vinNOp*self._iri['NO+']+\
-                                vinO2p*self._iri['O2+']+\
-                                vinOp *self._iri['O+']   )/self._iri['ne']
+        # rho_mass = (self._ionos['NO+']*iri_ionmass['NO+']+self._ionos['O2+']*iri_ionmass['O2+']+self._ionos['O+']*iri_ionmass['O+'])/(self._ionos['NO+']+self._ionos['O2+']+self._ionos['O+'])
+        self._ionos['nuin'] = (vinNOp*self._ionos['NO+']+\
+                               vinO2p*self._ionos['O2+']+\
+                               vinOp *self._ionos['O+']   )/self._ionos['ne']
 
 
     def _init_unc_parms(self,
@@ -673,6 +651,8 @@ class EXPERIMENT(object):
 
         have code take stock of which inputs the user has changed. For example, if only integ time or dutyCycle changes, no need to re-run R code, just scale outputs. 
 
+        integrationsec: Total integration time divided among all EXPERIMENT.N['pt'] beams, with time apportioned according to dwell_times
+
         """
 
         if resR is None:
@@ -681,8 +661,9 @@ class EXPERIMENT(object):
         # Check if we need to run a full calculation of uncertainties
         
         # Full calculation not needed if previous run exists and integrationsec is the only thing that has changed
-        existing_run = self._dfunc is not None
-        if force_recalc or (not existing_run):
+        isExisting_run = self._dfunc is not None
+        isChanged_parms = self._isChanged_ionos or self._isChanged_atmos
+        if force_recalc or (not isExisting_run):
             do_run = True
         else:
 
@@ -770,6 +751,8 @@ class EXPERIMENT(object):
             
             dfunc = pd.DataFrame(dfunc)
             
+            getcols = ['gclat','glon','h','dwell_time']
+            ionocols = ['ne','Ti','Te','fracO+','nuin']
             ##############################
             # Now get uncertainties for everything
             for i,point in self._points.iterrows():
@@ -777,12 +760,15 @@ class EXPERIMENT(object):
                 if i%10 == 0:
                     print(i)
             
-                gclat, glon, h, fracOp, nuin = point[['gclat','glon','h','fracOplus','nuin']]
+                gclat, glon, h, dwellT = point[getcols]
             
-                Ne, Ti, Te = self._iri.iloc[i][['ne','Ti','Te']]
+                Ne, Ti, Te, fracOp, nuin = self._ionos.iloc[i][ionocols]
             
+                intT = dwellT * integrationsec  # integration time for this beam
                 out = self._ISgeometry.parameterErrorEstimates(
-                    gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange, resR, integrationsec,
+                    gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange,
+                    resR,
+                    intT,
                     **runparms)
             
                 los = out[0]
@@ -919,55 +905,38 @@ class EXPERIMENT(object):
 
         return self._radarconfig
 
-    def get_iri(self):
 
-        return self._iri
+    def get_ionos(self, name=None):
 
-    def get_msis(self):
-
-        return self._msis
-
-    # def get_los_vectors_ecef(self):
-        
-    #     loslist = list()
-    #     txrxlist = list()       # keep track of which pair
-    #     for i,rx in enumerate(self._radarconfig['rx']):
-    #         los = get_los_vector_ecef(self._points[['xecef','yecef','zecef']].values.T,
-    #                                   self._radarconfig['tx']['ECEF'],
-    #                                   rx['ECEF'])
-
-    #         txrxlist.append(self._radarconfig['tx']['name']+rx['name'])
-    #         loslist.append(los)
-
-    #     return loslist, txrxlist
+        if name is None:
+            return self._ionos
+        else:
+            # Find out if user has made invalid request
+            return _get_valids(name,self._ionos)
 
 
-    # def get_los_vectors_enu(self,SANITYCHECK=True):
-        
-    #     loslist = list()
-    #     txrxlist = list()       # keep track of which pair
-    #     for i,rx in enumerate(self._radarconfig['rx']):
-    #         out = get_los_vector_enu(self._points[['xecef','yecef','zecef']].values.T,
-    #                                  self._radarconfig['tx']['ECEF'],
-    #                                  rx['ECEF'],
-    #                                  return_coords=SANITYCHECK)
+    def get_atmos(self, name=None):
 
-    #         if SANITYCHECK:
-    #             los, gdlat, h = out
+        if name is None:
+            return self._ionos
+        else:
+            # Find out if user has made invalid request
+            return _get_valids(name,self._atmos)
 
-    #             # make sure calculations of geodetic altitude differ by less than 1 km
-    #             assert np.all(np.abs(self._points['h']-h) < 1)
 
-    #             # make sure calculations of geodetic latitude differ by less than .02
-    #             assert np.all(np.abs(gdlat-self._points['gdlat']) < 0.02)
+    def set_ionos(self, name, values):
 
-    #         else:
-    #             los = out
+        self._ionos.loc[:,name] = values
 
-    #         txrxlist.append(self._radarconfig['tx']['name']+rx['name'])
-    #         loslist.append(los)
+        self._isChanged_ionos = True
 
-    #     return loslist, txrxlist
+
+    def set_atmos(self, parm=None):
+
+        self._atmos.loc[:,name] = values
+
+        # Record that we've changed atmosphere
+        self._isChanged_atmos = True
 
 
 def cartesian_to_spherical_with_position(x, y, z, vx, vy, vz,
@@ -1069,6 +1038,29 @@ def get_los_vector_enu(p, t, r,
 
 # los_rtp, rtp = cartesian_to_spherical_with_position(*e3du.points[['xecef','yecef','zecef']].values.T,
 #                                                     *los)
+
+
+def _get_valids(x,df):
+    """
+    valid: list of valid strings
+    x    : list of parameters requested by user
+    """
+    invalids = []
+    valids = df.columns
+    if isinstance(x,str):
+        x = [x]
+
+    for y in x:
+        if y not in valids:
+            invalids.append(y)
+
+    if len(invalids) > 0:
+        print("Requested invalid parameter(s): ["+", ".join(inv)+"]")
+        print("Valid parameters are ["+", ".join(valids)+"]")
+
+        return None
+    else:
+        return df[x]
 
 
 
