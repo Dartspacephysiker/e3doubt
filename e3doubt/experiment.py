@@ -357,7 +357,7 @@ class EXPERIMENT(object):
             
         # handle range resolution
         if resR is None:
-            print(f"resR not provided, so setting resR equal to fwhmRange ({self._radarconfig['fwhmRange']} km)")
+            print(f"resR not provided, so setting resR equal to fwhmRange(={self._radarconfig['fwhmRange']} km)")
             resR = np.ones(h.size)*self._radarconfig['fwhmRange']
         elif not hasattr(resR,'__len__'):
             print(f"Only one resR value provided (resR = {resR}); using this for all altitudes")
@@ -960,9 +960,12 @@ class EXPERIMENT(object):
 
         self._points.loc[:,'resR'] = resR
 
+        if not hasattr(resR,'size'):
+            resR = np.array(resR)
+
         fwhmRange = self._radarconfig['fwhmRange']
         if np.any(resR < fwhmRange):
-            print(f"Warning: some of the range resolutions you've provided are less than fwhmRange(={fwhmRange} km)!")
+            print(f"Warning: At least one of the range resolutions you've provided is less than fwhmRange(={fwhmRange} km)!")
 
         self._isChanged_radar = True
 
