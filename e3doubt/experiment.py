@@ -84,8 +84,9 @@ DEFAULT_RADAR_PARMS = dict(fradar=233e6,  # Radar frequency [Hz]
                            # tau0=100,      # ACF time-scale [us] (IS THIS REASONABLE?); Calculated automatically by parameterErrorEstimates.R
                            dutyCycle=.25,  # Transmitter duty cycle
                            RXduty=(0.75,1.,1.),      # Receiver duty cycle
-                           Tnoise=300, # Noise temperature for receiver sites
-                           Pt=3.5e6,      # Devin says " The goal for the first stage implementation of the system is for 5 MW TX power 
+                           Tnoise=300, # Noise temperature [K] for receiver sites
+                           Pt=3.5e6,      # Transmitter power in Watts
+                           fwhmRange=2,   # Range resolution in ACF decoding [km]
                            mineleTrans=30,
                            mineleRec=(30,30,30),
                            phArrTrans=True,
@@ -134,12 +135,11 @@ class EXPERIMENT(object):
                  el=DEFAULT_EL,
                  h=DEFAULT_H,
                  refdate=datetime(2017,8,5,22,0,0),  # IRI reference date (important date)
-                 fwhmres=3,
                  fill_IRI=True,  # If not all plasma parms provided, fill with IRI
                  dwell_times=None,
                  bit_length=None,
                  beam_width=None,
-                 fwhmRange=3,
+                 resR=None,
                  transmitter: str='SKI',
                  receivers: list=['SKI','KAI','KRS'],
                  fwhmtx = 2.1,
@@ -149,8 +149,6 @@ class EXPERIMENT(object):
     ):
         """ __init__ function for EXPERIMENT class
 
-        fwhmRange: Range resolution in ACF decoding [km]
-        
         If you wish to set values of ionospheric and atmospheric parameters manually, use the set_ionos and set_atmos methods.
 
         """
@@ -164,7 +162,7 @@ class EXPERIMENT(object):
     
         ####################
         # Handle input azimuths, elevations, altitudes
-        self._setup_az_el_h_arrays(az, el, h, dwell_times)
+        self._setup_az_el_h_arrays(az, el, h, dwell_times, resR)
         
         self._refdate = refdate
 
@@ -222,6 +220,7 @@ class EXPERIMENT(object):
         # user changes 
         self._isChanged_atmos = False
         self._isChanged_ionos = False
+        self._isChanged_radar = False
 
         ####################
         # Handle R via rpy2
@@ -265,6 +264,7 @@ class EXPERIMENT(object):
         mineleRec = radarparms['mineleRec']
         phArrTrans = radarparms['phArrTrans']
         phArrRec = radarparms['phArrRec']
+        fwhmRange = radarparms['fwhmRange']
 
         self._sites = get_supported_sites()
     
@@ -310,48 +310,61 @@ class EXPERIMENT(object):
                              'Tnoise'    : Tnoise,
                              'RXduty'    : RXduty,
                              'dutyCycle' : dutyCycle,
+                             'fwhmRange' : fwhmRange,
                              # 'tau0'      : tau0,
         }
 
 
-    def _setup_az_el_h_arrays(self, az, el, h, dwell_times):
+    def _setup_az_el_h_arrays(self, az, el, h, dwell_times, resR):
 
-        self.N = dict(az = az.size,
+        hsize = h.size
+        azsize = az.size
+        self.N = dict(az = azsize,
                       el = el.size,
-                      h = h.size,
+                      h = hsize,
                       tx = 1,
                       rx = len(self._radarconfig['rx']))
             
-        if az.size != el.size:
+        if azsize != el.size:
 
-            if az.size == 1 and el.size > 1:
+            if azsize == 1 and el.size > 1:
                 az = np.broadcast_to(az, el.shape)
-            elif az.size > 1 and el.size == 1:
+            elif azsize > 1 and el.size == 1:
                 el = np.broadcast_to(el, az.shape)
 
             else:
 
-                shape = (az.size, el.size)
+                shape = (azsize, el.size)
 
                 az,el = map(lambda x: np.broadcast_to(x, shape).ravel(), [az[:,np.newaxis], el[np.newaxis,:]])
 
 
-        if az.size != h.size:
+        if azsize != hsize:
 
-            if az.size == 1 and h.size > 1:
+            if azsize == 1 and hsize > 1:
                 az = np.broadcast_to(az, h.shape)
                 el = np.broadcast_to(el, h.shape)
-            elif az.size > 1 and h.size == 1:
+            elif azsize > 1 and hsize == 1:
                 h = np.broadcast_to(h, az.shape)
 
             else:
 
-                shape = (az.size, h.size)
+                shape = (azsize, hsize)
 
                 az,el,h = map(lambda x: np.broadcast_to(x, shape).ravel(), [az[:,np.newaxis],
                                                                             el[:,np.newaxis],
                                                                             h[np.newaxis,:]])
             
+        # handle range resolution
+        if resR is None:
+            print(f"resR not provided, so setting resR equal to fwhmRange ({self._radarconfig['fwhmRange']} km)")
+            resR = np.ones(h.size)*self._radarconfig['fwhmRange']
+        elif not hasattr(resR,'__len__'):
+            print(f"Only one resR value provided (resR = {resR}); using this for all altitudes")
+            resR = np.ones(h.size)*resR
+        elif resR.size == hsize:
+            resR = np.broadcast_to(resR[np.newaxis,:], shape).ravel()
+
         ####################
         # Get these points in ECEF coordinates
         txgdlat, txglon = self._sites.loc[self._radarconfig['tx']['name']]
@@ -386,6 +399,7 @@ class EXPERIMENT(object):
                 yecef=rECEF[:,1],
                 zecef=rECEF[:,2],
                 dwell_time=dwell_times,
+                resR=resR,
             )
         )
 
@@ -635,7 +649,7 @@ class EXPERIMENT(object):
         self._uncparms = uncparms
         
 
-    def calc_uncertainties(self,fwhmRange=2,resR=None,integrationsec=10,
+    def calc_uncertainties(self,integrationsec=10,
                            force_recalc=False,
                            pm0: tuple = (30.5,16),
                            hTeTi: int=110,
@@ -655,27 +669,25 @@ class EXPERIMENT(object):
 
         """
 
-        if resR is None:
-            resR = fwhmRange
+        fwhmRange = self._radarconfig['fwhmRange']
 
         # Check if we need to run a full calculation of uncertainties
         
         # Full calculation not needed if previous run exists and integrationsec is the only thing that has changed
+        do_run = False
         isExisting_run = self._dfunc is not None
-        isChanged_parms = self._isChanged_ionos or self._isChanged_atmos
-        if force_recalc or (not isExisting_run):
+        isChanged_parms = self._isChanged_ionos or self._isChanged_atmos or self._isChanged_radar
+
+        if force_recalc or (not isExisting_run) or isChanged_parms:
             do_run = True
         else:
 
-            do_run = False
             # If any of these are different between this call and the previous, do a full recalculation
-            RERUN_KEYS = ['fwhmRange','resR','pm0','hTeTi','fwhmIonSlab']
+            RERUN_KEYS = ['pm0','hTeTi','fwhmIonSlab']
 
             # What has changed?
 
-            dfunc_kw = dict(fwhmRange=fwhmRange,
-                            resR=resR,
-                            integrationsec=integrationsec,
+            dfunc_kw = dict(integrationsec=integrationsec,
                             pm0=pm0,
                             hTeTi=hTeTi,
                             fwhmIonSlab=fwhmIonSlab,
@@ -751,7 +763,7 @@ class EXPERIMENT(object):
             
             dfunc = pd.DataFrame(dfunc)
             
-            getcols = ['gclat','glon','h','dwell_time']
+            getcols = ['gclat','glon','h','dwell_time','resR']
             ionocols = ['ne','Ti','Te','fracO+','nuin']
             ##############################
             # Now get uncertainties for everything
@@ -760,7 +772,7 @@ class EXPERIMENT(object):
                 if i%10 == 0:
                     print(i)
             
-                gclat, glon, h, dwellT = point[getcols]
+                gclat, glon, h, dwellT, resR = point[getcols]
             
                 Ne, Ti, Te, fracOp, nuin = self._ionos.iloc[i][ionocols]
             
@@ -800,14 +812,18 @@ class EXPERIMENT(object):
                 
             # store dfunc and last run options
             self._dfunc = dfunc
-            self._dfunc_kw = dict(fwhmRange=fwhmRange,
-                                  resR=resR,
-                                  integrationsec=integrationsec,
+            self._dfunc_kw = dict(integrationsec=integrationsec,
                                   pm0=pm0,
                                   hTeTi=hTeTi,
                                   fwhmIonSlab=fwhmIonSlab,
                                   )
             
+
+            # turn off _isChanged variables
+            self._isChanged_atmos = False
+            self._isChanged_ionos = False
+            self._isChanged_radar = False
+
             return dfunc
 
 
@@ -901,6 +917,7 @@ class EXPERIMENT(object):
 
         return self._points
 
+
     def get_radarconfig(self):
 
         return self._radarconfig
@@ -937,6 +954,28 @@ class EXPERIMENT(object):
 
         # Record that we've changed atmosphere
         self._isChanged_atmos = True
+
+
+    def set_range_resolution(self, resR):
+
+        self._points.loc[:,'resR'] = resR
+
+        fwhmRange = self._radarconfig['fwhmRange']
+        if np.any(resR < fwhmRange):
+            print(f"Warning: some of the range resolutions you've provided are less than fwhmRange(={fwhmRange} km)!")
+
+        self._isChanged_radar = True
+
+
+    def set_radarparm(self, name, value):
+
+        supported = ['fwhmRange','Pt','Tnoise','fradar','dutyCycle']
+
+        if name in supported:
+            self._radarconfig[name] = value
+
+        self._init_unc_parms()
+        self._isChanged_radar = True
 
 
 def cartesian_to_spherical_with_position(x, y, z, vx, vy, vz,
