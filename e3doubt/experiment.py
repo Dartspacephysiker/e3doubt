@@ -907,8 +907,13 @@ class EXPERIMENT(object):
         Cminv = 0.
         covmat = []
         for n in range(N):
-            covmat.append( np.linalg.inv(los[:,:,n].T@np.diag(1/dv[:,n])@los[:,:,n] + Cminv) )
-    
+            try:
+                covm = np.linalg.inv(los[:,:,n].T@np.diag(1/dv[:,n])@los[:,:,n] + Cminv) 
+            except:
+                print(f"Couldn't invert precision matrix for point {n}!")
+                covm = np.ones((3,3))*np.nan
+
+            covmat.append(covm)
     
         return np.transpose(np.stack(covmat),axes=[1,2,0])
     
