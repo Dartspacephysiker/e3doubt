@@ -386,11 +386,17 @@ class Experiment(object):
 
     def _setup_az_el_h_arrays(self, az, el, h, dwell_times, resR):
 
-        hsize = len(h)
-        azsize = len(az)
-        elsize = len(el)
+        az = np.array(az)
+        el = np.array(el)
+        h = np.array(h)
+
+        azsize = az.size
+        elsize = el.size
+        hsize = h.size
+
         self.N = dict(az = azsize,
                       el = elsize,
+                      beam = 0,  # Calculate this in a moment
                       h = hsize,
                       tx = 1,
                       rx = len(self._radarconfig['rx']))
@@ -408,12 +414,23 @@ class Experiment(object):
 
                 az,el = map(lambda x: np.broadcast_to(x, shape).ravel(), [az[:,np.newaxis], el[np.newaxis,:]])
 
+            beams = np.arange(az.size)
+
+            self.N['beam'] = az.size
+
+        else:
+
+            beams = np.arange(azsize)
+
+            self.N['beam'] = azsize
+
 
         if azsize != hsize:
 
             if azsize == 1 and hsize > 1:
                 az = np.broadcast_to(az, h.shape)
                 el = np.broadcast_to(el, h.shape)
+                beams = np.broadcast_to(beams, h.shape)
             elif azsize > 1 and hsize == 1:
                 h = np.broadcast_to(h, az.shape)
 
@@ -421,9 +438,10 @@ class Experiment(object):
 
                 shape = (azsize, hsize)
 
-                az,el,h = map(lambda x: np.broadcast_to(x, shape).ravel(), [az[:,np.newaxis],
-                                                                            el[:,np.newaxis],
-                                                                            h[np.newaxis,:]])
+                az,el,beams,h = map(lambda x: np.broadcast_to(x, shape).ravel(), [az[:,np.newaxis],
+                                                                                   el[:,np.newaxis],
+                                                                                   beams[:,np.newaxis],
+                                                                                   h[np.newaxis,:]])
             
         # handle range resolution
         if resR is None:
@@ -451,25 +469,12 @@ class Experiment(object):
 
         self.N['pt'] = len(ph)
 
-        if dwell_times is None:
-            dwell_times = 1
-        if not hasattr(dwell_times,'__len__'):
-            dwell_times = np.ones(self.N['pt'])*dwell_times
-
-        dwell_times = np.array(dwell_times).ravel()
-
-        assert dwell_times.size == self.N['pt'],f"Number of dwell_times specified ({dwell_times.size}) is incompatible with number of beams ({self.N['pt']})!" #sanity check
-
-        # Normalize dwell_times so that sum is one.
-        # Idea is that user provides a single total integration time, and that time is
-        # divided among the beams according to the fractions implied by dwell_times.
-        dwell_times = dwell_times/np.sum(dwell_times)  
-
         self._points = pd.DataFrame(
             dict(
                 az=az,
                 el=el,
                 h=h,
+                beam=beams,
                 gdlat=pgdlat,
                 gclat=pgclat,
                 glon=pglon,
@@ -477,10 +482,37 @@ class Experiment(object):
                 xecef=rECEF[:,0],
                 yecef=rECEF[:,1],
                 zecef=rECEF[:,2],
-                dwell_time=dwell_times,
                 resR=resR,
             )
         )
+
+        ####################
+        ## Handle dwell times
+        if dwell_times is None:
+            dwell_times = 1
+        self.set_beam_dwelltimes(dwell_times)
+        # if dwell_times is None:
+        #     dwell_times = 1
+        # if not hasattr(dwell_times,'__len__'):
+        #     # dwell_times = np.ones(self.N['pt'])*dwell_times
+        #     dwell_times = np.ones(self.N['beam'])*dwell_times
+
+        # dwell_times = np.array(dwell_times).ravel()
+
+        # # At this stage, make sure there is one dwell time for each beam
+        # assert dwell_times.size == self.N['beam'],f"Number of dwell_times specified ({dwell_times.size}) is incompatible with number of beams ({self.N['beam']})!" #sanity check
+
+        # # Normalize dwell_times so that sum is one.
+        # # Idea is that user provides a single total integration time, and that time is
+        # # divided among the beams (not points) according to the fractions implied by dwell_times.
+        # totdwell = np.sum(dwell_times)
+
+        # # Now broadcast dwell times if necessary
+        # if (dwell_times.size == self.N['beam']) and (self.N['beam'] != self.N['pt']):
+            
+        #         dwell_times = np.broadcast_to(dwell_times[:,np.newaxis], shape).ravel()
+
+        # dwell_times = dwell_times/totdwell
 
 
     def _run_IRI(self):
@@ -1058,16 +1090,33 @@ class Experiment(object):
             return _get_valids(name,self._atmos)
 
 
+    def get_beam_info(self):
+        """
+        Returns a DataFrame containing the azimuth, elevation, and dwell_time of each beam
+        """
+
+        nb, nh = self.N['beam'], self.N['h']
+        
+        if self.N['beam'] != self.N['h']:
+            beamget = lambda name: self._points[name].values.reshape(nb,nh)[:,0]
+            
+        else:
+            beamget = lambda name: self._points[name].values
+
+        beam = beamget('beam')
+        az = beamget('az')
+        el = beamget('el')
+        dwell_time = beamget('dwell_time')
+
+        return pd.DataFrame(dict(az=az,
+                                 el=el,
+                                 dwell_time=dwell_time),
+                            index=beam)
+
+
     def get_range_resolution(self):
 
         return self._points['resR']
-
-
-    def get_dwelltimes(self):
-        """
-        Get dwell times for each point
-        """
-        return self._points['dwell_time']
 
 
     def set_ionos(self, name, values):
@@ -1099,11 +1148,37 @@ class Experiment(object):
         self._isChanged_radar = True
 
 
-    def set_dwelltimes(self, dwell_time):
+    def set_beam_dwelltimes(self, dwell_times):
         """
-        Modify dwell times for each point. Must be either scalar or array-like with same length as Experiment.N['pt'].
+        Modify dwell times for each beam. Must be either scalar or array-like with same length as  
+        Experiment.N['beam'].
+
+        If helpful, call method Experiment.get_beam_info() to get a DataFrame containing beam information
         """
-        self._points.loc[:,'dwell_time'] = dwell_time
+        
+        if not hasattr(dwell_times,'__len__'):
+            # dwell_times = np.ones(self.N['pt'])*dwell_times
+            dwell_times = np.ones(self.N['beam'])*dwell_times
+
+        dwell_times = np.array(dwell_times).ravel()
+
+        # At this stage, make sure there is one dwell time for each beam
+        assert dwell_times.size == self.N['beam'],f"Number of dwell_times specified ({dwell_times.size}) is incompatible with number of beams ({self.N['beam']})!" #sanity check
+
+        # Normalize dwell_times so that sum is one.
+        # Idea is that user provides a single total integration time, and that time is
+        # divided among the beams (not points) according to the fractions implied by dwell_times.
+        totdwell = np.sum(dwell_times)
+
+        # Now broadcast dwell times if necessary
+        if (dwell_times.size == self.N['beam']) and (self.N['beam'] != self.N['pt']):
+            
+            shape = (self.N['beam'], self.N['h']) 
+            dwell_times = np.broadcast_to(dwell_times[:,np.newaxis], shape).ravel()
+
+        dwell_times = dwell_times/totdwell
+
+        self._points.loc[:,'dwell_time'] = dwell_times
         self._isChanged_radar = True
 
 
