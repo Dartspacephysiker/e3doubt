@@ -192,25 +192,41 @@ class Experiment(object):
         If you wish to set values of ionospheric and atmospheric parameters manually, use the set_ionos and set_atmos methods.
 
         NOTE
-        =====
+        ====================
         In practice, running exp.calc_uncertainties() only requires a few of the variables present in self._ionos (Ne, Ti, Te, fracOp, nuin). None of the variables in self._atmos are directly used; they are only used for estimating the collision frequency stored in self._ionos['nuin'].
 
 
-        Other useful methods
+        methods
         ====================
 
-        get_points()          : Get DataFrame containing information about each point, including range resolution and dwell time
-        get_ionos()           : Get DataFrame containing ionosphere parameters
-        get_atmos()           : Get DataFrame containing atmosphere parameters
-        get_radarconfig()     : Get dictionary describing the radar configuration
-        get_range_resolution(): Get range resolution (in km) of each point.
-        get_dwelltimes()      : Get relative dwell times of each point.
+        public
+        -------
+        calc_uncertainties      : Run R function ISgeometry.parameterErrorEstimates for given config
+        get_los_vectors         
+        get_points              : Get DataFrame containing information about each point, including beam no, range resolution and dwell time
+        get_radarconfig         : Get dictionary describing the radar configuration
+        get_ionos               : Get DataFrame containing ionosphere parameters
+        get_atmos               : Get DataFrame containing atmosphere parameters
+        get_beam_info           : Get information about experiment beams
+        get_range_resolution    : Get range resolution (in km) of each point.
+        get_velocity_cov_matrix : Get covariance matrix for each velocity vector
+        run_models              : Run IRI and MSIS, store outputs, and calculate ion-neutral collision frequency
+        set_ionos               : Update the specified ionosphere parameter
+        set_atmos               : Update the specified atmosphere parameter
+        set_range_resolution    : Set range resolutions (in km) of each point.
+        set_beam_dwelltimes     
+        set_radarparm           : Update the specified radar parameter
 
-        set_ionos(parm,values)        : Update the specified ionosphere parameter
-        set_atmos(parm,values)        : Update the specified atmosphere parameter
-        set_radarparm(parm,value)     : Update the specified radar parameter
-        set_range_resolution(resR)    : Set range resolutions (in km) of each point.
-        set_dwelltimes(dwell_time)    : Set relative dwell times of each point.
+        private
+        -------
+        _calc_collfreq         : Called by run_models
+        _run_IRI               : Called by run_models
+        _run_MSIS              : Called by run_models
+        _init_R                : Called by __init__
+        _init_unc_parms        : Called by __init__ and set_radarparm
+        _process_site          : Called by _setup_radarconfig
+        _setup_radarconfig     : Called by __init__
+        _setup_az_el_h_arrays  : Called by __init__
 
         Useful member(s?)
         ====================
@@ -1015,11 +1031,11 @@ class Experiment(object):
         return loslist, txrxlist
         
 
-    def velocity_cov_matrix(self,
-                            los=None,
-                            dv=None,
-                            Cminv=0.,
-                            coordsys='enu'):
+    def get_velocity_cov_matrix(self,
+                                los=None,
+                                dv=None,
+                                Cminv=0.,
+                                coordsys='enu'):
         """
         los     : np.ndarray, shape (P, 3, N) with P number of transmitter-receiver pairs and N number of points
                 matrix of line-of-sight vectors
@@ -1093,6 +1109,7 @@ class Experiment(object):
     def get_beam_info(self):
         """
         Returns a DataFrame containing the azimuth, elevation, and dwell_time of each beam
+
         """
 
         nb, nh = self.N['beam'], self.N['h']
