@@ -143,9 +143,9 @@ def get_geodetic_enu_vectors_in_ECEF(gdlatRec, glonRec, hRec=0.):
     return eR, nR, uR
 
 
-def get_enu_vectors_cartesian(gclat,gclon,degrees=True):
+def get_geocentric_enu_vectors_cartesian(gclat,gclon,degrees=True):
     """
-    Get east, north, up vectors for a given (lat,lon) pair or a list 
+    Get geocentric east, north, up vectors for a given (lat,lon) pair or a list 
     of (lat,lon) pairs in Cartesian (Earth-centered, Earth-fixed, or 
     ECEF) coordinates.
 
@@ -153,8 +153,6 @@ def get_enu_vectors_cartesian(gclat,gclon,degrees=True):
     2022/03/22
     """
     
-    warnings.warn("This thing assumes geocentric coordinates are right! In particular, it assume that the geocentric radial unit vector is the same as the geodetic 'up' vector, which is of course not totally true!")
-
     gclat,gclon = _make_equal_length(gclat,gclon)
 
     if degrees:

@@ -7,6 +7,14 @@ E3Doubt is a tool for calculating an order-of-magnitude (hopefully!) estimate of
 
 We recommend using the examples to learn how to use E3Doubt.
 
+Prerequisites
+=======
+
+- git >= 2.13
+- R >= 3.4
+- CMake >= 3(?) (Tested with CMake 3.22.0)
+
+
 Install
 =======
 
@@ -38,12 +46,12 @@ Note that in this case, the ``deps-from-github`` option means that Ilkka Virtane
 
 FIRST RUN
 ===========
-Once you've got everything downloaded, you'll need to run something like the following to make rpy2 aware of the ISgeometry R package
+Once you've got everything downloaded, you'll need to run something like the following to make rpy2 aware of the ISgeometry R package. NOTE: You *must* have R installed on your machine for this to work
 
 .. code-block:: python
 
     # Location of e3d install directory
-    e3ddir = '/path/to/e3doubt/external/'
+    e3ddir = '/path/to/e3doubt/'
     
     # Import things we need from rpy2
     from rpy2.robjects.packages import importr
@@ -57,10 +65,20 @@ Once you've got everything downloaded, you'll need to run something like the fol
     utils.install_packages("maps")
     utils.install_packages("mapdata")
 
-    utils.install_packages(os.path.join(e3ddir,'ISgeometry'),
+    utils.install_packages(os.path.join(e3ddir,'external/ISgeometry'),
                            repos=robj.NULL,
                            dependencies=True,
                            type="source")
+
+
+If you get errors about R not being able to locate ISgeometry, make sure that the ``external/ISgeometry/`` directory is not empty:
+
+.. code-block::
+   cd /path/to/e3doubt
+
+   # Pull in ISgeometry package
+   git submodule update --recursive --remote
+
 
 
 Dependencies
@@ -76,5 +94,5 @@ You should have the following modules installed (this is handled automatically w
 - `pymsis <https://github.com/swxtrec/pymsis>`_
 - rpy2
 
-You should also have git version >= 2.13
+
 

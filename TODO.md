@@ -1,7 +1,10 @@
 TODO
 ====
 
-How to handle beams in experiment.py? Should that just be the number of beam/az pairs (default 27)?
+Add plotter that shows at a glance where beams are pointing in 2D
 
-Given a total time window that is available for integration, how to calculate integration time for each beam given that we want to divide up time evenly among beams?
+Add calculator to get azimuths and elevations from a given set of geodetic lat, lon, and h points
 
+Add plotter that shows classic Ilkka plots, i.e., integration time necessary to achieve a certain uncertainty threshold
+
+Add plotter that shows some basic info about model ionosphere and atmosphere?

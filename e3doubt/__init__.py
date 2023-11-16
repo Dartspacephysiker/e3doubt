@@ -1,1 +1,1 @@
-from .experiment import EXPERIMENT
+from .experiment import Experiment
