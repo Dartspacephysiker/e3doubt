@@ -507,28 +507,6 @@ class Experiment(object):
         if dwell_times is None:
             dwell_times = 1
         self.set_beam_dwelltimes(dwell_times)
-        # if dwell_times is None:
-        #     dwell_times = 1
-        # if not hasattr(dwell_times,'__len__'):
-        #     # dwell_times = np.ones(self.N['pt'])*dwell_times
-        #     dwell_times = np.ones(self.N['beam'])*dwell_times
-
-        # dwell_times = np.array(dwell_times).ravel()
-
-        # # At this stage, make sure there is one dwell time for each beam
-        # assert dwell_times.size == self.N['beam'],f"Number of dwell_times specified ({dwell_times.size}) is incompatible with number of beams ({self.N['beam']})!" #sanity check
-
-        # # Normalize dwell_times so that sum is one.
-        # # Idea is that user provides a single total integration time, and that time is
-        # # divided among the beams (not points) according to the fractions implied by dwell_times.
-        # totdwell = np.sum(dwell_times)
-
-        # # Now broadcast dwell times if necessary
-        # if (dwell_times.size == self.N['beam']) and (self.N['beam'] != self.N['pt']):
-            
-        #         dwell_times = np.broadcast_to(dwell_times[:,np.newaxis], shape).ravel()
-
-        # dwell_times = dwell_times/totdwell
 
 
     def _run_IRI(self):
