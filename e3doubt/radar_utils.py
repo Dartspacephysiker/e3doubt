@@ -1,6 +1,7 @@
 import numpy as np
-from e3doubt.vectors import dotprod,crossprod,vecmag
-from e3doubt.geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc
+from .vectors import dotprod,crossprod,vecmag
+from .geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc,geoc2geod
+
 import warnings
 
 # Geomagnetic reference radius:
@@ -180,7 +181,7 @@ def get_geocentric_enu_vectors_cartesian(gclat,gclon,degrees=True):
     return e,n,u
 
 
-def get_receiver_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=0.):
+def get_point_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=0.):
     """
     Given the location of the receiver (as a gdlat,glon pair) and the 
     location of the scattering point R_S (as an ECEF point), 
@@ -247,7 +248,7 @@ def get_receiver_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=0.):
     return np.rad2deg(azR).squeeze(), np.rad2deg(elR).squeeze()
 
 
-def get_receiver_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
+def get_point_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
     """
     Given the location of the receiver (as gdlatRec,glonRec, and possibly hRec) and the 
     location of the scattering point (as gdlatScat,glonScat, and hScat), 
@@ -261,7 +262,58 @@ def get_receiver_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
 
     R_S = rScat * rvec(thetaScat, glonScat)
 
-    return get_receiver_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=hRec)
+    return get_point_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=hRec)
+
+
+def get_2D_csgrid_az_el(gdlat_t, glon_t, h=200, L=100, W=100, Lres=10, Wres=10, return_grid=False):
+    """
+    Get azimuths and elevations of selection of points defined on a 2D grid in cubed sphere coordinates.
+
+    if return_grid:
+        return az, el, gdlat, glon, h, (grid, projection)
+    else:
+        return az, el, gdlat, glon, h
+    """
+    
+    try:
+        from secsy import cubedsphere as cs
+    
+    except:
+        print("Couldn't import cubedsphere! Try install secsy package")
+        return 0
+
+    # Convert most inputs to meters
+    # L = L*1e3
+    # W = W*1e3
+    # Lres = Lres*1e3
+    # Wres = Wres*1e3
+
+    theta, RI, _, _ = geod2geoc(gdlat_t, h, 0., 0.,)
+    gclat_t = 90.-theta
+    RI *= 1e3                   # to meters
+
+    projection = cs.CSprojection((glon_t, gclat_t), 0) 
+    grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = 0)
+    
+    gclat, glon = grid.lat.ravel(), grid.lon.ravel()
+    gdlat, h, _, _ = geoc2geod(90.-gclat, grid.R/1e3, 0., 0.)
+    npt = gdlat.size
+    
+    az, el = np.zeros(npt), np.zeros(npt)
+    
+    for i,(gdla, glo, hi) in enumerate(zip(gdlat,glon,h)):
+        # print(i,gdla,glo)
+        
+        azt, elt = get_point_az_el_geod(gdlat_t,glon_t,gdla,glo,hi,hRec=0.)
+    
+        az[i] = azt
+        el[i] = elt
+        
+
+    if return_grid:
+        return az,el,gdlat,glon,h,grid
+    else:
+        return az,el,gdlat,glon,h
 
 
 # def get_range_line(gclat, gclon, az, el, h_km, degrees=True,returnbonus=False):

@@ -16,7 +16,7 @@ from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc
 
 import e3doubt.radar_utils
 reload(e3doubt.radar_utils)
-from e3doubt.radar_utils import get_enu_vectors_cartesian,get_receiver_az_el_geod,ECEFtosphericalENUMatrix
+from e3doubt.radar_utils import get_enu_vectors_cartesian,get_point_az_el_geod,ECEFtosphericalENUMatrix
 
 sites = get_supported_sites()
 
@@ -89,9 +89,9 @@ win_ip = np.argmin(dot_bl)
 # eaz0 = np.sin(np.deg2rad(az0))*e_ecef+np.cos(np.deg2rad(az0))*n_ecef
 # el0 = np.rad2deg(np.arctan2(np.sum(lwin*u_ecef),np.sum(lwin*eaz0)))
 
-# az02, el02 = get_receiver_az_el(gclat_t,glon_t,np.array([xp[win_ip],yp[win_ip],zp[win_ip]]),R=rt)
-# az01, el01 = get_receiver_az_el_geod_ECEF(gdlat_t,glon_t,np.array([xp[win_ip],yp[win_ip],zp[win_ip]]).T)
-az0, el0 = get_receiver_az_el_geod(gdlat_t,glon_t,gdlatp[win_ip],glonp[win_ip],h)
+# az02, el02 = get_point_az_el(gclat_t,glon_t,np.array([xp[win_ip],yp[win_ip],zp[win_ip]]),R=rt)
+# az01, el01 = get_point_az_el_geod_ECEF(gdlat_t,glon_t,np.array([xp[win_ip],yp[win_ip],zp[win_ip]]).T)
+az0, el0 = get_point_az_el_geod(gdlat_t,glon_t,gdlatp[win_ip],glonp[win_ip],h)
 
 ##############################
 # Pick el,az to go along with master point

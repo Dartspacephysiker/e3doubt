@@ -20,7 +20,7 @@ from e3doubt.utils import get_supported_sites,field_geometry_lonlat
 from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc
 
 import e3doubt.radar_utils
-from e3doubt.radar_utils import get_receiver_az_el_geod,ECEFtosphericalENUMatrix,get_range_line
+from e3doubt.radar_utils import get_point_az_el_geod,ECEFtosphericalENUMatrix,get_range_line
 
 sites = get_supported_sites()
 
@@ -105,7 +105,7 @@ angler = angler.reshape(dlshape)
 # eaz0 = np.sin(np.deg2rad(az0))*e_ecef+np.cos(np.deg2rad(az0))*n_ecef
 # el0 = np.rad2deg(np.arctan2(np.sum(lwin*u_ecef),np.sum(lwin*eaz0)))
 
-az0, el0 = get_receiver_az_el_geod(gdlat_t,glon_t,gdlatp[win_ip],glonp[win_ip],h)
+az0, el0 = get_point_az_el_geod(gdlat_t,glon_t,gdlatp[win_ip],glonp[win_ip],h)
 
 incp, decp, diplatp = field_geometry_lonlat(glonp, gdlatp, igrf_refdate, h_km=apex_refh)
 
