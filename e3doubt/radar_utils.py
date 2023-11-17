@@ -1,6 +1,6 @@
 import numpy as np
 from .vectors import dotprod,crossprod,vecmag
-from .geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc,geoc2geod
+from .geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc,geoc2geod,ECEF2geodetic
 
 import warnings
 
@@ -316,31 +316,31 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h=200, L=100, W=100, Lres=10, Wres=10, 
         return az,el,gdlat,glon,h
 
 
-# def get_range_line(gclat, gclon, az, el, h_km, degrees=True,returnbonus=False):
+def get_range_line(gdlatRec, glonRec, az, el, h_km, hRec=0., returnbonus=False, brent=False):
+    """
+    r_los = get_range_line(gdlatRec, glonRec, az, el, h_km)
 
-#     warnings.warn("This thing assumes geocentric coordinates are right! In particular, it assume that the geocentric radial unit vector is the same as the geodetic 'up' vector, which is of course not totally true!")
+    Given radar lat, lon, azimuth, elevation, altitude of a point in question (and optionally radar altitude), 
+    return a vector in ECEF coordinates that points from the center of the earth to the point along the radar line of sight.
 
-#     # assert 2<0,"Where is this being used? We should standardize and make everything use geodetic coordinates"
+    gdlatRec: Radar geodetic latitude                   [deg]
+    glonRec : Radar geographic longitude                [deg]
+    az      : Radar azimuth                             [deg]
+    el      : Radar elevation                           [deg]
+    h_km    : Geodetic altitude of point(s) in question [km]
+    hRec    : Geodetic altitude of radar                [km]
 
-#     e, n, u = get_enu_vectors_cartesian(gclat,gclon,degrees=degrees)
+    return_bonus : If true, also return dictionary containing range (d), 
+                   unit vector pointing from radar to point in question (phat) in ECEF coordinates, 
+                   vector pointing from center of Earth to radar (R) in ECEF coordinates, 
+                   and east, north, and up unit vectors (e, n, u) at radar in ECEF coordinates.
 
-#     R = u * geodeticheight2geocentricR(geocentric2geodeticlat(gclat), 0.)
-#     # R = RE * u
-
-#     phat = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
-#     # px, py, pz = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
-
-#     d = height_to_range(h_km, el, degrees=degrees)
-
-#     r_los = R + d[...,np.newaxis] * phat
-
-#     if returnbonus:
-#         return r_los,dict(d=d,phat=phat,R=R,e=e,n=n,u=u)
-#     else:
-#         return r_los
-
-
-def get_range_line(gdlatRec, glonRec, az, el, h_km, hRec=0., degrees=True, returnbonus=False):
+    brent   : Use Brent's method to calculate range (requires scipy.optimize)
+    NOTE
+    =====
+    If brent=False, the function height_to_range is used. This assumes that the Earth is spherical,
+    and incurs a small error of a few % for altitudes of a couple hundred kilometers.
+    """
 
     eR, nR, uR = get_geodetic_enu_vectors_in_ECEF(gdlatRec, glonRec, hRec=hRec)
     
@@ -358,12 +358,27 @@ def get_range_line(gdlatRec, glonRec, az, el, h_km, hRec=0., degrees=True, retur
     # phat = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
     # px, py, pz = point_vector_cartesian(gclat,gclon,az,el,degrees=degrees)
 
-    d = height_to_range(h_km, el, gdlat=gdlatRec, degrees=degrees)
+    if not brent:
+        d = height_to_range(h_km, el, gdlat=gdlatRec, degrees=True)
+    else:
+        from scipy.optimize import brent
+        
+        d = np.zeros_like(el)
+        for i in range(len(el)):
+            # aztmp = azr[i]
+            eltmp = el[i]
+            azhtmp = azhat[i,:]
+            phtmp = phat[i,:]
+            htmp = h_km[i]
+            dest = height_to_range(htmp, eltmp, gdlat=gdlatRec, degrees=True)
+
+            f = lambda d: np.abs(ECEF2geodetic(*(R+d*phtmp).T,degrees=True)[0][0]-htmp)
+            d[i] = brent(f, brack=(0., dest, dest*2))
 
     r_los = R + d[...,np.newaxis] * phat
 
     if returnbonus:
-        return r_los,dict(d=d,phat=phat,R=R,e=e,n=n,u=u)
+        return r_los,dict(d=d,phat=phat,R=R,e=eR,n=nR,u=uR)
     else:
         return r_los
 
@@ -394,6 +409,9 @@ def ECEFtosphericalENUMatrix(lon, gclat):
 
 
 def rvec(thetad,phid):
+    """
+    Get spherical r unit vector in ECEF coordinates given colatitude and azimuth thetad and phid (in degrees)
+    """
         
     thr = np.deg2rad(thetad)
     phr = np.deg2rad(phid)

@@ -144,6 +144,7 @@ class Experiment(object):
                  radarparms = DEFAULT_RADAR_PARMS,
                  # default_ionosphere=DEFAULT_IONOSPHERE,
                  refdate_models=datetime(2017,8,5,22,0,0),  # IRI reference date (important date)
+                 brent=False,
     ):
         """ __init__ function for Experiment class
 
@@ -181,7 +182,12 @@ class Experiment(object):
         refdate_models  : datetime-like
                     Reference datetime for running IRI and MSIS models
         
-
+        brent           : bool
+                    If True, use Brent's method to find the range of each point defined by az, el, h.
+                    If Brent's method is not used, the Earth is assumed to be spherical ONLY for calculation
+                    of the range from the altitude, az, and elevation. See radar_utils.get_range_line().
+                    Generally not necessary, but if you're needlessly anal about this sort of thing like 
+        
         A typical situation might involve the following:
 
         from e3doubt import Experiment
@@ -245,7 +251,7 @@ class Experiment(object):
     
         ####################
         # Handle input azimuths, elevations, altitudes
-        self._setup_az_el_h_arrays(az, el, h, dwell_times, resR)
+        self._setup_az_el_h_arrays(az, el, h, dwell_times, resR, brent=brent)
         
         self._refdt_models = refdate_models
 
@@ -400,7 +406,12 @@ class Experiment(object):
         }
 
 
-    def _setup_az_el_h_arrays(self, az, el, h, dwell_times, resR):
+    def _setup_az_el_h_arrays(self, az, el, h, dwell_times, resR, brent=False):
+        """
+        brent: If True, use Brent's method to find the range of each altitude specified.
+               This is generally not necessary, but if you're needlessly anal about this sort of thing like 
+               S. M. Hatch, brent=True is the option for you.
+        """
 
         az = np.array(az)
         el = np.array(el)
@@ -478,11 +489,16 @@ class Experiment(object):
         rECEF = get_range_line(txgdlat,
                                txglon,
                                az, el, h,
-                               returnbonus=False)
+                               returnbonus=False,
+                               brent=brent)
 
+        # 'ph' is useful for one reason: Comparing it to 'h' tells us how large an error we've incurred via
+        # the range calculation performed by get_range_line. For cases I've examined, 
         ph, pgdlat, pglon = ECEF2geodetic(*(rECEF.T))
         pgclat = geodetic2geocentriclat(pgdlat)
-
+        if not np.all(np.isclose(ph,h,atol=1e-2)):
+            warnings.warn("Calculation of ECEF coordinates of each point via radar_utils.get_range_line() has incurred an error of order 0.01 km or greater in altitude. If you need greater precision, try setting brent=True in initialization of Experiment object.")
+            
         self.N['pt'] = len(ph)
 
         self._points = pd.DataFrame(
