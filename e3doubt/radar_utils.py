@@ -265,7 +265,9 @@ def get_point_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
     return get_point_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=hRec)
 
 
-def get_2D_csgrid_az_el(gdlat_t, glon_t, h=200, L=100, W=100, Lres=10, Wres=10, return_grid=False):
+def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3, Wres=10e3,
+                        wshift = None,
+                        return_grid=False):
     """
     Get azimuths and elevations of selection of points defined on a 2D grid in cubed sphere coordinates.
 
@@ -288,15 +290,19 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h=200, L=100, W=100, Lres=10, Wres=10, 
     # Lres = Lres*1e3
     # Wres = Wres*1e3
 
-    theta, RI, _, _ = geod2geoc(gdlat_t, h, 0., 0.,)
+    if wshift is None:
+        wshift = -Wres//2
+
+    theta, RI, _, _ = geod2geoc(gdlat_t, h_grid, 0., 0.,)
     gclat_t = 90.-theta
     RI *= 1e3                   # to meters
 
     projection = cs.CSprojection((glon_t, gclat_t), 0) 
-    grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = 0)
+    grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = wshift)
     
     gclat, glon = grid.lat.ravel(), grid.lon.ravel()
     gdlat, h, _, _ = geoc2geod(90.-gclat, grid.R/1e3, 0., 0.)
+    assert np.all(np.isclose(h,h_grid,atol=0.2))  # permit inaccurancy of 200 m
     npt = gdlat.size
     
     az, el = np.zeros(npt), np.zeros(npt)

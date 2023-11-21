@@ -1094,7 +1094,7 @@ class Experiment(object):
     def get_atmos(self, name=None):
 
         if name is None:
-            return self._ionos
+            return self._atmos
         else:
             # Find out if user has made invalid request
             return _get_valids(name,self._atmos)
