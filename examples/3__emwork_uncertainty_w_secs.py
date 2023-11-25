@@ -178,8 +178,8 @@ GTG = G.T@Cdinv@G
 
 # Applying regularization?
 l1 = 0.
-l1 = 0.00001
-l1 = 1e2
+l1 = 1e-3
+# l1 = 1e2
 l1 = 1e-1
 LTL = l1 * np.median(GTG)*np.diag(np.ones(GTG.shape[0]))
 
@@ -375,11 +375,30 @@ n = expvi.get_ionos('ne').values.squeeze()
 SEED = 2020
 rng = np.random.default_rng(SEED)
 
-vi = rng.normal(scale=20,size=(2,n.size))  # scale (stddev) in m/s
-E = rng.normal(scale=.02,size=(2,n.size))     # scale (stddev) in V/m, assuming typical E-field is order 10s of mV/m
+vimag = 50
+vimag = 400
 
-vi_zero = np.zeros((3, n.size))
-E_zero = np.zeros((3, n.size))
+Emag = vimag*5e4*1e-9
+
+vimean = np.array([vimag/np.sqrt(2),vimag/np.sqrt(2)])
+Emean = np.array([0,Emag])          # in V/m
+
+
+vi = rng.normal(loc=vimean[:,np.newaxis],
+                scale=np.sqrt(np.stack([covar_vi[0,0],covar_vi[1,1]])),
+                size=(2,n.size))  # scale (stddev) in m/s
+
+E = rng.normal(loc=Emean[:,np.newaxis],
+               scale=np.sqrt(np.stack([covar_e[0,0],covar_e[1,1]])),
+               size=(2,n.size))     # scale (stddev) in V/m, assuming typical E-field is order 10s of mV/m
+
+vi_zero = rng.normal(loc=np.array([0,0])[:,np.newaxis],
+                scale=np.sqrt(np.stack([covar_vi[0,0],covar_vi[1,1]])),
+                size=(2,n.size))  # scale (stddev) in m/s
+E_zero = rng.normal(loc=np.array([0,0])[:,np.newaxis],
+               scale=np.sqrt(np.stack([covar_e[0,0],covar_e[1,1]])),
+               size=(2,n.size))     # scale (stddev) in V/m, assuming typical E-field is order 10s of mV/m
+
 
 q = 1.602176634e-19         # elementary charge
 emwork = q * n * np.sum(vi * E,axis=0)
@@ -450,14 +469,17 @@ scale = 1e-9
 
 bins = np.linspace(0,np.abs(emwork).max()/scale*10,150)
 
-fig = plt.figure(num=1)
+fig = plt.figure(num=1,figsize=(8,6))
 
 plt.clf()
+
+fig.suptitle(r"$\lambda_1$ = "+f"{l1:.5e}\n"+
+             "$\mathbf{v}_i$ = ["+", ".join([f"{v:.1f}" for v in vimean])+"] m/s, "+
+             "$\mathbf{E}$ = ["+", ".join([f"{v*1e3:.1f}" for v in Emean])+"] mV/m")
+
 # ax0 = plt.subplot(1,2,1)
 # ax1 = plt.subplot(1,2,2)
-
 ax0 = plt.subplot(1,1,1)
-
 
 plt.sca(ax0)
 
@@ -465,15 +487,17 @@ plt.sca(ax0)
 # plt.hist(np.abs(np.sqrt(varem))/scale,label="stddev(em)",alpha=0.5)#,bins=bins)
 # plt.hist(np.abs(np.sqrt(varem_zero))/scale,label="stddev(em) (E=vi=0)",alpha=0.5)#,bins=bins)
 
-shows = [np.abs(emwork)/scale,
-         np.abs(np.sqrt(varem))/scale,
-         np.abs(np.sqrt(varem_zero))/scale]
+# shows = [np.abs(emwork)/scale,
+#          np.abs(np.sqrt(varem))/scale,
+#          np.abs(np.sqrt(varem_zero))/scale]
 
-labs = ['abs(emwork)','stddev(em)','stddev(em) (E=vi=0)']
-plt.hist(shows,label=labs)
-# plt.hist(np.abs(emwork)/scale,label="emwork",alpha=0.5)#,bins=bins)
-# plt.hist(np.abs(np.sqrt(varem))/scale,label="stddev(em)",alpha=0.5)#,bins=bins)
-# plt.hist(np.abs(np.sqrt(varem_zero))/scale,label="stddev(em) (E=vi=0)",alpha=0.5)#,bins=bins)
+# labs = ['abs(emwork)','stddev(em)','stddev(em) (E=vi=0)']
+# plt.hist(shows,label=labs)
+
+emworkstr = "$\mathbf{j}\cdot\mathbf{E}$"
+plt.hist(np.abs(emwork)/scale,label=emworkstr+" = $q n \mathbf{v}_i \cdot \mathbf{E}$",alpha=0.5)#,bins=bins)
+plt.hist(np.abs(np.sqrt(varem))/scale,label="stddev("+emworkstr+")",alpha=0.5)#,bins=bins)
+plt.hist(np.abs(np.sqrt(varem_zero))/scale,label="stddev("+emworkstr+") (assume E=vi=0)",alpha=0.5)#,bins=bins)
 
 plt.xlabel("EM work [nW/m³]")
 
