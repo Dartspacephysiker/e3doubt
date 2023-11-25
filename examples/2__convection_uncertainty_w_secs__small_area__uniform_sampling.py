@@ -6,34 +6,52 @@ plt.ion()
 
 import ppigrf
 
-import e3doubt
-from importlib import reload
-reload(e3doubt)
 from e3doubt import experiment
 
 from e3doubt.utils import get_supported_sites
-from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc
+from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc,geodetic2geocentriclat
 
-# import e3doubt.radar_utils
-# reload(e3doubt.radar_utils)
-# from e3doubt.radar_utils import get_point_az_el_geod
+import e3doubt.radar_utils
+from importlib import reload
+reload(e3doubt.radar_utils)
+from e3doubt.radar_utils import get_2D_csgrid_az_el
 
-from apexpy import Apex
+def gridedges(lon,lat):
+    #bottom edge
+    b = (slice(None,None,None),0)
+    r = (-1,slice(None,None,None))
+    t = (slice(None,None,-1),-1)
+    l = (0,slice(None,None,-1))
 
-DEFAULT_AZ = np.array([  0,  35,  69, 101, 130, 156, 180, 204, 231, 258, 288, 323,
-                         0,  30,  60,  90, 120, 150, 180, 210, 240, 270, 300, 330,
-                       180, 180, 180])
-DEFAULT_EL = np.array([76, 73, 72, 70, 69, 67, 66, 66, 69, 71, 73, 73,
-                       54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54, 54,
-                       76, 82.8, 90])
-# DEFAULT_H  = np.array([80,100,120,150,200,250,300,350,400])
-H  = np.array([250,300,350,400])
-# H  = np.array([160,180,200,220,240])
+    lonbound = np.concatenate([lon[b],lon[r],lon[t],lon[l]])
+    latbound = np.concatenate([lat[b],lat[r],lat[t],lat[l]])
 
-exp = experiment.Experiment(az=DEFAULT_AZ,
-                            el=DEFAULT_EL,
-                            h=H,
-)
+    return lonbound,latbound
+
+
+sites = get_supported_sites()
+
+# Get transceiver and receiver locations
+gdlat_t, glon_t = sites.loc['SKI']
+gdlat_r1, glon_r1 = sites.loc['KAI']
+gdlat_r2, glon_r2 = sites.loc['KRS']
+
+# Define grid
+h_grid = 200
+Lgrid = 100e3
+Wgrid = 100e3
+Lresgrid = Wresgrid = 10e3 #grid resolution in m                                 
+wshiftgrid = -Wresgrid//2
+# wshiftgrid = 0.
+az, el, gdlatg, glong, h, gridm = get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=h_grid,
+                                                      L=Lgrid, W=Wgrid,
+                                                      Lres=Lresgrid, Wres=Wresgrid,
+                                                      wshift=wshiftgrid,
+                                                      return_grid=True)
+
+H  = np.array([200,220])
+
+exp = experiment.Experiment(az=az,el=el,h=H)
 exp.run_models()
 dfunc = exp.calc_uncertainties(integrationsec=300)
 
@@ -42,53 +60,27 @@ radarconfig = exp.get_radarconfig()
 Npt = exp.N['pt']
 
 igrf_refdate = datetime(2020,12,1)
-
 apex_refh = 110
-a = Apex(igrf_refdate,refh=apex_refh)
 
 gdlat, glon, h = points['gdlat'].values,points['glon'].values, points['h'].values
 
-# Get gdlat and glon of points at ionospheric altitude
-alat, alon = a.geo2apex(gdlat, glon, h)
+# Get matrix that lets us map covariance to ionospheric altitude
+B, (gdlatmap, glonmap) = get_perpendicular_velocity_mapping_matrix(gdlat,glon,h,
+                                                               apex_refh=apex_refh,
+                                                               refdate=igrf_refdate,
+                                                               return_mapped_coordinates=True)
 
-gdlatp, glonp, err = a.apex2geo(alat, alon, apex_refh)
+gclatmap = geodetic2geocentriclat(gdlatmap)
 
 ## 1. Get velocity covariance matrices
 
 covmats = exp.get_velocity_cov_matrix()
 
-# NEW
-# dve1 = np.einsum('j...,jk...,k...',d1,covmats,d1)
-# dve2 = np.einsum('j...,jk...,k...',d2,covmats,d2)
-
-
 ## 2. Project velocity covariance into covariance of matrices at ionospheric height
 # This is done using Apex basis vectors
 
-# get base vectors at height and at reference altitude, where 'p' mean 'prime' (i.e., at reference altitude)
-# components are geodetic east, north, and up
-f1, f2, f3, g1, g2, g3, d1, d2, d3, e1, e2, e3 = a.basevectors_apex(gdlat, glon, h)
-f1p, f2p, f3p, g1p, g2p, g3p, d1p, d2p, d3p, e1p, e2p, e3p = a.basevectors_apex(gdlatp, glonp, apex_refh)
-
-e1pe2p = np.transpose(np.stack([e1p,e2p]),axes=[1, 0, 2])  # dimension 0: ENU components; 1: e1p or e2p; 2: meas location
-d1d2 = np.stack([d1,d2]) # dimension 0: d1 or d2; 1: ENU components; 2: meas location
-
-# Form B matrix, which represents calculation of ve1 (=dot(v,d1)) and ve2(=dot(v,d1)) followed by projection to reference ionospheric height 
-# sum is over e1p/d1 and e2p/d2 vectors, so first two dimensions of B both index ENU components. last dimension is meas location
-B = np.transpose(np.einsum('ij...,jk...',e1pe2p,d1d2),axes=[1,2,0])  # transpose to put measurement index as last index
-
 # Project velocity vector covariance at measurement height into (perpendicular-to-B-)velocity-vector-at-reference-ionospheric-height space
 covp = np.transpose(np.einsum('ij...,jk...,lk...',B,covmats,B),axes=[1,2,0])  # use 'lk' and not 'kl' at the end because we need transpose of B, not B. 
-
-# SANITY CHECK
-# 'e' stands for 'example'
-# e1pe2pe = np.transpose(np.stack([e1p[:,0],e2p[:,0]]),axes=[1, 0])
-# d1d2e = np.stack([d1[:,0],d2[:,0]])
-# Be = e1pe2pe@d1d2e
-# covpe = Be@covmats[:,:,0]@Be.T
-
-# assert np.all(np.isclose(covp[...,0],covpe))
-# assert np.all(np.isclose(B[...,0],Be))
 
 ## 3. Select model for velocity 
 # Let's go for div-free SECS to begin with
@@ -103,33 +95,17 @@ tx = radarconfig['tx']
 gclat_t, gdlat_t, glon_t = tx['gclat'], tx['gdlat'], tx['glon']
 RE = 6371.2e3
 RI = RE+110e3
-L = 700e3
-W = 700e3
-Lres = Wres = 50e3
+L = 200e3
+W = 200e3
+Lres = Wres = 5e3
+wshift = -Wres//2
+# wshift = 0.
 projection = cs.CSprojection((glon_t, gclat_t), 0) # central (lon, lat) and orientation of the grid
-grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = 0)
+grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = wshift)
 
 xi_t, eta_t = grid.projection.geo2cube(glon_t, gclat_t)
 
-xi_p, eta_p = grid.projection.geo2cube(points['glon'].values, points['gclat'].values)
-
-# xi_e  = np.hstack((grid.xi_mesh[0]    , grid.xi_mesh [0 , - 1] + grid.dxi )) - grid.dxi /2 
-# eta_e = np.hstack((grid.eta_mesh[:, 0], grid.eta_mesh[-1,   0] + grid.deta)) - grid.deta/2 
-# grid_E = cs.CSgrid(cs.CSprojection(grid.projection.position, grid.projection.orientation),
-#                        grid.L + grid.Lres, grid.W + grid.Wres, grid.Lres, grid.Wres, 
-#                        edges = (xi_e, eta_e), R = grid.R) # outer
-
-# lat_J, lon_J = np.ravel( grid.lat ), np.ravel( grid.lon )
-# lat_E, lon_E = np.ravel( grid_E.lat ), np.ravel( grid_E.lon )
-
-# # set SECS singularity limit so it covers the cell:
-# secs_singularity_limit = np.min([grid.Wres, grid.Lres])/2
-
-# from secsy import get_SECS_B_G_matrices, get_SECS_J_G_matrices
-# Ee, En = get_SECS_J_G_matrices(lat, lon, lat_E, lon_E,
-#                                current_type = 'divergence_free',
-#                                RI = RI,
-#                                singularity_limit = secs_singularity_limit)
+xi_p, eta_p = grid.projection.geo2cube(glonmap, gclatmap)
 
 ## Set up lompe model object so that we can rip out convection matrices and stuff
 
@@ -145,7 +121,8 @@ v_n = np.zeros(Npt)
 
 v_tot = np.vstack((v_e.flatten(), v_n.flatten()))
 
-v_coords = np.vstack((points['glon'].values, points['gclat'].values)) # E-field is defined on the grid
+# v_coords = np.vstack((points['glon'].values, points['gclat'].values)) # E-field is defined on the grid
+v_coords = np.vstack((glonmap, gclatmap)) # E-field is defined at locations MAPPED from grid to the ionosphere!
 components = [0,1]                                           # eastward, northward components
 error=1e1                                                    # m/s
 iweight=1.
@@ -182,8 +159,10 @@ Cdinv = np.linalg.inv(Cd)
 GTG = G.T@Cdinv@G
 
 # Applying regularization?
+l1 = 0.
 l1 = 0.00001
-l1 = 0.1
+l1 = 1e2
+l1 = 1e-1
 LTL = l1 * np.median(GTG)*np.diag(np.ones(GTG.shape[0]))
 
 if not np.isclose(l1,0.):
@@ -198,6 +177,16 @@ Cpd = Gobs@Cpm@Gobs.T
 vm_e_var = np.diag(Cpd[:Neval,:Neval])   # eastward v-model variance
 vm_n_var = np.diag(Cpd[Neval:,Neval:])   # northward v-model variance
 
+doresplot = True
+if doresplot:
+   from lompe.model.visualization import resolutionplot,locerrorplot
+   model.Rmatrix = Cpm.dot(GTG)
+   import e3doubt.analysis_utils
+   reload(e3doubt.analysis_utils)
+   from e3doubt.analysis_utils import calc_resolution
+   calc_resolution(model)
+   resolutionplot(model)
+   locerrorplot(model)
 
 ##############################
 ## Make a plot
@@ -216,7 +205,6 @@ for i in range(nrows*ncols):
     axes.append(ax)
 
 axes = np.array(axes)
-# , axes = plt.subplots(nrows = 2, ncols = 2, )
 
 axes = axes.ravel()
 csaxes = [CSplot(ax, grid, gridtype = 'cs') for ax in axes]
@@ -252,46 +240,39 @@ csaxes[1].scatter(model.grid_E.lon, model.grid_E.lat,
 axes[0].legend()
 axes[1].legend()
 
-# cvme = csaxes[2].contourf(grid.lon, grid.lat, np.sqrt(np.abs(vm_e_var)).reshape(grid.lon.shape))
-# cvmn = csaxes[3].contourf(grid.lon, grid.lat, np.sqrt(np.abs(vm_n_var)).reshape(grid.lon.shape))
-
 levels = np.arange(-1000,1001,100)
-levels = np.array([-5000,-1000,-400,-100,-10,10,100,400,1000,5000])
+levels = np.array([-3000,-1000,-400,-100,-10,10,100,400,1000,5000])
+pcmeshlevels = np.array([-1000,1000])
 poslevels = np.array([10,40,100,225,400,1000,5000])
 extend = 'both'
 
 axes[2].set_title("Model $v_e$ variance")
 axes[3].set_title("Model $v_n$ variance")
-cvme = csaxes[2].contourf(grid.lon, grid.lat, vm_e_var.reshape(grid.lon.shape),
-                          levels=levels,cmap=plt.get_cmap('bwr'),extend=extend)
-cvmn = csaxes[3].contourf(grid.lon, grid.lat, vm_n_var.reshape(grid.lon.shape),
-                          levels=levels,cmap=plt.get_cmap('bwr'),extend=extend)
 
-cvmec = csaxes[2].contour(grid.lon, grid.lat, vm_e_var.reshape(grid.lon.shape),
-                          colors='k',levels=poslevels)
-cvmen = csaxes[3].contour(grid.lon, grid.lat, vm_n_var.reshape(grid.lon.shape),
-                          colors='k',levels=poslevels)
-cvmec.clabel(levels=None)
-cvmen.clabel(levels=None)
+# cmap = plt.get_cmap('bwr')
+cmap = plt.get_cmap('bwr').resampled(10)
+cvme = csaxes[2].pcolormesh(grid.lon, grid.lat, vm_e_var.reshape(grid.lon.shape),
+                            cmap=cmap,vmin=pcmeshlevels[0],vmax=pcmeshlevels[-1])
+cvmn = csaxes[3].pcolormesh(grid.lon, grid.lat, vm_n_var.reshape(grid.lon.shape),
+                          cmap=cmap,vmin=pcmeshlevels[0],vmax=pcmeshlevels[-1])
 
 
-# cbe = plt.colorbar(cvme,extend=extend) 
-# cbn = plt.colorbar(cvmn,extend=extend)
+for csax in csaxes:
+    csax.ax.set_xlim((-0.02,0.02))
+    csax.ax.set_ylim((-0.02,0.02))
+
 cbe = plt.colorbar(cvme) 
 cbn = plt.colorbar(cvmn)
 
-# Show predicted variances
-ax.clabel(imclat, imclat.levels, fmt=fmt, colors='k', inline=1, fontsize=12)
+glonb, gclatb = gridedges(gridm.lon,gridm.lat)
+for csax in csaxes[2:]:
+    csax.plot(glonb,gclatb,color='k',alpha=0.5)
 
-HIGHRES = False
+
+HIGHRES = True
 for cl in grid.projection.get_projected_coastlines(resolution='10m' if HIGHRES else '50m'):
-    lon, lat = grid.projection.cube2geo(cl[0], cl[1])
-    # cd = Dipole()                     # geo to CD
-    # mlat, mlon = cd.geo2mag(lat, lon) 
-    xis, etas = grid.projection.geo2cube(lon, lat) 
-    csaxes[0].plot(lon, lat, color='black', linewidth=1)
+    clo, cla = grid.projection.cube2geo(cl[0], cl[1])
 
-    csaxes[1].plot(lon, lat, color='black', linewidth=1)
-    # csaxes[0].plot(xis, etas, color='black', linewidth=1)
-
-    # csaxes[1].plot(xis, etas, color='black', linewidth=1)
+    xis, etas = gridm.projection.geo2cube(clo, cla) 
+    for csax in csaxes:
+        csax.plot(clo, cla, color='black', linewidth=1)

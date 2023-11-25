@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import ppigrf
+from datetime import datetime
 import os
 
 basepath = os.path.dirname(__file__)
@@ -111,4 +112,58 @@ def field_geometry_lonlat(lon,lat,date,h_km=0):
     inc,dec,diplat = map(lambda x: np.ravel(np.rad2deg(x)), [inc,dec,diplat])
 
     return inc, dec, diplat
+
+
+def get_perpendicular_velocity_mapping_matrix(gdlat,glon,h,
+                                              mapto_h=None,
+                                              apex_refh=110,
+                                              refdate=datetime(2020,12,1),
+                                              return_mapped_coordinates=False):
+    """
+    B = get_perpendicular_velocity_mapping_matrix(gdlat, glon, h, 
+                                                  apex_refh=110, 
+                                                  refdate=datetime(2020,12,1))
+
+    Get matrix that maps velocity vectors (in general with field-aligned components) at a 
+    given set of geographic longitudes and geodetic latitudes and altitudes to the height 
+    mapto_h (default: apex_refh). 
+
+    """
+
+    from apexpy import Apex
+    
+
+    if mapto_h is None:
+        mapto_h = apex_refh
+
+    a = Apex(refdate,refh=apex_refh)
+
+    # Get gdlat and glon of points at ionospheric altitude
+    alat, alon = a.geo2apex(gdlat, glon, h)
+
+    gdlatp, glonp, err = a.apex2geo(alat, alon, mapto_h)
+
+
+    # get base vectors at height and at reference altitude, where 'p' mean 'prime' (i.e., at reference altitude)
+    # components are geodetic east, north, and up
+    f1, f2, f3, g1, g2, g3, d1, d2, d3, e1, e2, e3 = a.basevectors_apex(gdlat, glon, h)
+    f1p, f2p, f3p, g1p, g2p, g3p, d1p, d2p, d3p, e1p, e2p, e3p = a.basevectors_apex(gdlatp, glonp, mapto_h)
+
+    e1pe2p = np.transpose(np.stack([e1p,e2p]),axes=[1, 0, 2])  # dimension 0: ENU components; 1: e1p or e2p; 2: meas location
+    d1d2 = np.stack([d1,d2]) # dimension 0: d1 or d2; 1: ENU components; 2: meas location
+
+    # Form B matrix, which represents calculation of ve1 (=dot(v,d1)) and ve2(=dot(v,d2))
+    # followed by projection to reference ionospheric height 
+    # sum is over e1p/d1 and e2p/d2 vectors, so first two dimensions of B both index ENU components
+    # last dimension is meas location
+
+    # transpose to put measurement index as last index (convenient for using einsum later, I think)
+    B = np.transpose(np.einsum('ij...,jk...',e1pe2p,d1d2),axes=[1,2,0])  
+
+    if return_mapped_coordinates:
+        return B, (gdlatp, glonp)
+
+    else:
+        return B
+        
 
