@@ -53,7 +53,7 @@ H  = np.array([200,220])
 
 exp = experiment.Experiment(az=az,el=el,h=H)
 exp.run_models()
-dfunc = exp.calc_uncertainties(integrationsec=300)
+dfunc = exp.get_uncertainties(integrationsec=300)
 
 points = exp.get_points()
 radarconfig = exp.get_radarconfig()

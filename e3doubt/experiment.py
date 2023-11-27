@@ -789,17 +789,28 @@ class Experiment(object):
         self._uncparms = uncparms
         
 
-    def calc_uncertainties(self,integrationsec=10,
+    def get_uncertainties(self,integrationsec=10,
                            force_recalc=False,
                            pm0: tuple = (30.5,16),
                            hTeTi: int=110,
                            fwhmIonSlab: int=100,
 ):
         """
-        
+        Calculate uncertainties at each point using ISgeometry R package (author: I. Virtanen).
 
-        This function tries to be conservative and avoid performing a full calculation of uncertainties 
-        if the user only varies the keyword integrationsec in  multiple calls to this function. In this 
+        This calculation requires that the following parameters are set in the given pandas DataFrames
+
+        from self._points (get with self.get_points())
+        --------------------
+        'gclat','glon','h','dwell_time','resR'
+
+        self._ionos (get with self.get_ionos())
+        --------------------
+        'ne','Ti','Te','fracO+','nuin'
+
+
+        This function/method tries to be conservative and avoid performing a full calculation of uncertainties 
+        if the user only changes the keyword integrationsec in consecutive calls to this function. In this 
         case, the uncertainties are merely scaled.
 
         However, if the user modifies the ionosphere, atmosphere, or radar parameters (via any of 
@@ -979,6 +990,26 @@ class Experiment(object):
             self._isChanged_radar = False
 
             return dfunc
+        
+
+    def calc_uncertainties(self,integrationsec=10,
+                           force_recalc=False,
+                           pm0: tuple = (30.5,16),
+                           hTeTi: int=110,
+                           fwhmIonSlab: int=100,
+):
+        """
+        Deprecated in favor of get_uncertainties
+        """
+
+        warnings.warn("In a future of version of e3doubt 'calc_uncertainties' will be deprecated! Please use 'get_uncertainties' instead; it uses the same keywords.")
+
+
+        return self.get_uncertainties(integrationsec=integrationsec,
+                                      force_recalc=force_recalc,
+                                      pm0=pm0,
+                                      hTeTi=hTeTi,
+                                      fwhmIonSlab=fwhmIonSlab)
 
 
     def get_los_vectors(self,
@@ -1051,10 +1082,26 @@ class Experiment(object):
             los = np.stack(los)
 
         if dv is None:
-            dv = self._dfunc[['dVi1','dVi2','dVi3']].values.T
+            if self._dfunc is None:
+                print("Can't get velocity uncertainties! Please either run Experiment.get_uncertainties() before calling Experiment.get_velocity_cov_matrix(), or call Experiment.get_velocity_cov_matrix() with the keyword 'dv' specified")
+                
+                return None
+
+            # Get all uncertainty columns that contain info about line-of-sight velocity uncertainty
+            dvicols = []
+            for col in self._dfunc.columns:
+                if len(col) >= 4:
+                    if col.startswith("dVi") and col[3].isdigit():
+                        dvicols.append(col)
+            
+            dv = self._dfunc[dvicols].values.T
 
         assert los.ndim == 3 and dv.ndim == 2
-        assert (los.shape[0] == dv.shape[0]) & (los.shape[2] == dv.shape[1]) & (los.shape[1] == 3)
+
+        # Simple headcheck: Make sure dimensions are compatible
+        # 1st dimension of dv and los should have length == number of transmitter/receiver pairs
+        # 2nd dimension of dv and 3rd dimension of los should have length == number of points
+        assert (los.shape[0] == dv.shape[0] == len(txrxpairs)) & (los.shape[2] == dv.shape[1]) & (los.shape[1] == 3)
     
         P,_,N = los.shape
     

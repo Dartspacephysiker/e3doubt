@@ -6,13 +6,15 @@ plt.ion()
 
 import ppigrf
 
+from importlib import reload
+import e3doubt
+reload(e3doubt)
 from e3doubt import experiment
 
 from e3doubt.utils import get_supported_sites
 from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc,geodetic2geocentriclat
 
 import e3doubt.radar_utils
-from importlib import reload
 reload(e3doubt.radar_utils)
 from e3doubt.radar_utils import get_2D_csgrid_az_el
 
@@ -37,6 +39,69 @@ def gridedges(lon,lat):
     return lonbound,latbound
 
 
+def var_emwork(n, vi, E, var_n, covar_vi, covar_e,
+               hack=True,
+               q=1.602176634e-19,         # elementary charge
+):
+    """
+    The dimension corresponding to measurement number should be the last dimension of vi, E, covar_vi, covar_e
+    """
+
+    cv, ce = covar_vi, covar_e
+    
+    nsq = n**2
+    
+    if hack:
+        print("var_emwork HACK: Eliminating contribution to covariance from upward component since you don't currently do anything with the upward component")
+        
+        vi = vi[:2]
+        E = E[:2]
+    
+        cv = cv[:2,:2]
+        ce = ce[:2,:2]
+        
+    #handle each term separately
+    
+    # E(vi)^T Cov_E E(vi), where E() is expectation value
+    evcove = np.einsum("i...,ij...,j...",vi, ce, vi)
+    
+    # E(E)^T Cov_vi E(E)
+    eecovv = np.einsum("i...,ij...,j...",E, cv, E)
+    
+    # Trace(Cov_v Cov_E)
+    trcvce = np.einsum("ij...,ij...",cv,ce)
+
+    # E(E)^T E(v) E(v)^T E(E) = || E(v)^T E ||²
+    # val = np.sum(vi*vi,axis=0) * np.sum(E*E,axis=0)
+    val = np.sum(vi*E,axis=0)**2 
+
+    t1 = nsq * evcove
+        
+    t2 = nsq * eecovv
+    
+    t3 = nsq * trcvce
+    
+    t4 = var_n * val
+    #t4alt = var_n * np.einsum("i...,i...",vi,vi) * np.einsum("i...,i...",E,E)
+    
+    t5 = var_n * eecovv
+    
+    t6 = var_n * evcove
+    
+    t7 = var_n * trcvce
+    
+    est1 = q**2 * (t1+t2+t3+t4+t5+t6+t7)
+    
+    # This expression apparently incurs rounding error. Strange!
+    # est2 = nsq * (evcove + eecovv + trcvce) \
+    #     + var_n * (np.sum(vi*vi,axis=0) * np.sum(E*E,axis=0) + eecovv + evcove + trcvce)
+    
+    # return est1,est2
+    return est1
+
+apex_refh = 110
+q = 1.602176634e-19         # elementary charge
+
 sites = get_supported_sites()
 
 # Get transceiver and receiver locations
@@ -60,23 +125,44 @@ az, el, gdlatg, glong, h, gridm = get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=h_
 H  = np.array([200,220])        # Altitude(s) from which to estimate convection 
 H_vi = np.array([100])          # Altitude(s) at which to calculate EM work = J dot E
 
+allH = np.concatenate([H,H_vi])
+
+
 # convection estimation experiment
-exp = experiment.Experiment(az=az,el=el,h=H,refdate_models=refdate_models)
+exp = experiment.Experiment(az=az,el=el,h=allH,refdate_models=refdate_models)
 exp.run_models()
-dfunc = exp.calc_uncertainties(integrationsec=300)
+
+vi_idx = np.argwhere(exp.get_points()['h'].isin(H_vi).values).squeeze()
+ve_idx = np.argwhere(exp.get_points()['h'].isin(H).values).squeeze()
+
+Nbeam = exp.N['beam']
+TOTNpt = exp.N['pt']
+Npt = len(ve_idx)
+Nvieval = len(vi_idx)
+
+# How long to integrate above ionos and how long below?
+tot_integration_sec = 300
+
+# Optionally set different dwell times
+# beam_dwell_times = np.zeros(Nbeam)
+# beam_dwell_times = ...
+# exp.set_beam_dwelltimes(dwell_times)
+
+dfuncall = exp.get_uncertainties(integrationsec=tot_integration_sec)
+dfunc = dfuncall.iloc[ve_idx]
+uncvi = dfuncall.iloc[vi_idx]
+print("TECHNICALLY you should map the E-field covariances to the appropriate altitude!")
+
 
 # EM work estimation experiment
-expvi = experiment.Experiment(az=az,el=el,h=H_vi,refdate_models=refdate_models)
-expvi.run_models()
-dfuncvi = expvi.calc_uncertainties(integrationsec=300)
+# expvi = experiment.Experiment(az=az,el=el,h=H_vi,refdate_models=refdate_models)
+# expvi.run_models()
+# uncvi = expvi.get_uncertainties(integrationsec=tot_integration_sec)
 
-
-# get coordinates of convection estimation points
-points = exp.get_points()
+points = exp.get_points().iloc[ve_idx]     # get coordinates of convection/E-field estimation points
+points_vi = exp.get_points().iloc[vi_idx]  # get coordinates of ion drift estimation points
 radarconfig = exp.get_radarconfig()
-Npt = exp.N['pt']
 
-apex_refh = 110
 mapto_h = apex_refh
 
 gdlat, glon, h = points['gdlat'].values,points['glon'].values, points['h'].values
@@ -92,7 +178,9 @@ gclatmap = geodetic2geocentriclat(gdlatmap)
 
 ## 1. Get velocity covariance matrices
 
-covmats = exp.get_velocity_cov_matrix()
+covmatsall = exp.get_velocity_cov_matrix()
+covmats = covmatsall[...,ve_idx]
+cov_vi = covmatsall[...,vi_idx]
 
 ## 2. Project velocity covariance into covariance of matrices at ionospheric height
 # This is done using Apex basis vectors
@@ -180,7 +268,7 @@ GTG = G.T@Cdinv@G
 l1 = 0.
 l1 = 1e-3
 # l1 = 1e2
-l1 = 1e-1
+# l1 = 1e-1
 LTL = l1 * np.median(GTG)*np.diag(np.ones(GTG.shape[0]))
 
 if not np.isclose(l1,0.):
@@ -315,7 +403,7 @@ for cl in grid.projection.get_projected_coastlines(resolution='10m' if HIGHRES e
 ##############################
 # Now get E-field covariance matrices at observation points
 
-lonvi, latvi = expvi.get_points()['glon'].values,expvi.get_points()['gclat'].values
+lonvi, latvi = points_vi['glon'].values,points_vi['gclat'].values
 
 Gvis = model.matrix_func['efield'](lon=lonvi,lat=latvi)
 
@@ -323,7 +411,6 @@ print("TECHNICALLY you should map the E-field covariances to the appropriate alt
 Gvi = np.vstack([G_ for i, G_ in enumerate(Gvis) if i in ds.components])
 Cpdvi = Gvi@Cpm@Gvi.T
 
-Nvieval = expvi.N['pt']
 Emvi_e_var = np.diag(Cpdvi[:Nvieval,:Nvieval])   # eastward E-model variance, (V/m)²
 Emvi_n_var = np.diag(Cpdvi[Nvieval:,Nvieval:])   # northward E-model variance
 
@@ -334,7 +421,7 @@ Emvi_ne_var = np.diag(Cpdvi[Nvieval:,:Nvieval])   # northward E-model variance
 assert np.all(np.isclose(Emvi_ne_var,Emvi_en_var))  # Sanity check, off-diag elements should be the same regardless of echelon
 
 # Make covariance matrices for each point
-covE = np.vstack([Emvi_e_var,Emvi_en_var,Emvi_ne_var,Emvi_n_var]).reshape(2,2,expvi.N['pt'])
+covE = np.vstack([Emvi_e_var,Emvi_en_var,Emvi_ne_var,Emvi_n_var]).reshape(2,2,Nvieval)
 
 # MAP E-field covariance matrix to relevant altitude
 print("WARNING: Right now you do not have code for mapping the E-field covariance to a different altitude! It's technically (and possibly seriously, depending on altitude in question) incorrect to not map E-fields to the height of the observations")
@@ -345,9 +432,6 @@ print("WARNING: You also have no calculation of the upward component of E and el
 
 
 ## Get ion velocity covariance at measurement altitude
-cov_vi = expvi.get_velocity_cov_matrix()
-
-points_vi = expvi.get_points()
 
 gdlat_vi, glon_vi, h_vi = points_vi['gdlat'].values,points_vi['glon'].values, points_vi['h'].values
 
@@ -363,20 +447,19 @@ B_vi, (gdlatmap_vi, glonmap_vi) = get_perpendicular_velocity_mapping_matrix(gdla
 cov_viperp = np.transpose(np.einsum('ij...,jk...,lk...',B_vi,cov_vi,B_vi),axes=[1,2,0])  # use 'lk' and not 'kl' at the end because 
 
 ##Next, combine E-field and density (co)variances with ion velocity variances
-uncvi = expvi.calc_uncertainties(integrationsec=300)
 
 var_n = uncvi['dnemulti'].values.squeeze()**2
 
 covar_vi = cov_viperp
 covar_e = covE
 
-n = expvi.get_ionos('ne').values.squeeze()
+n = exp.get_ionos('ne').iloc[vi_idx].values.squeeze()
 
 SEED = 2020
 rng = np.random.default_rng(SEED)
 
 vimag = 50
-vimag = 400
+# vimag = 400
 
 Emag = vimag*5e4*1e-9
 
@@ -400,63 +483,9 @@ E_zero = rng.normal(loc=np.array([0,0])[:,np.newaxis],
                size=(2,n.size))     # scale (stddev) in V/m, assuming typical E-field is order 10s of mV/m
 
 
-q = 1.602176634e-19         # elementary charge
 emwork = q * n * np.sum(vi * E,axis=0)
 
 emwork_zero = q * n * np.sum(vi_zero * E_zero,axis=0)
-
-def var_emwork(n, vi, E, var_n, covar_vi, covar_e,hack=True):
-    """
-    The dimension corresponding to measurement number should be the last dimension of vi, E, covar_vi, covar_e
-    """
-
-    cv, ce = covar_vi, covar_e
-    
-    nsq = n**2
-    
-    if hack:
-        print("var_emwork HACK: Eliminating contribution to covariance from upward component since you don't currently do anything with the upward component")
-        
-        vi = vi[:2]
-        E = E[:2]
-    
-        cv = cv[:2,:2]
-        ce = ce[:2,:2]
-        
-    #handle each term separately
-    
-    # Represents E(vi)^T Cov_E E(vi), where E() is expectation value
-    evcove = np.einsum("i...,ij...,j...",vi, ce, vi)
-    
-    # Represents E(E)^T Cov_vi E(E)
-    eecovv = np.einsum("i...,ij...,j...",E, cv, E)
-    
-    # Represents Trace(Cov_v Cov_E)
-    trcvce = np.einsum("ij...,ij...",cv,ce)
-
-    t1 = nsq * evcove
-        
-    t2 = nsq * eecovv
-    
-    t3 = nsq * trcvce
-    
-    t4 = var_n * np.sum(vi*vi,axis=0) * np.sum(E*E,axis=0)
-    #t4alt = var_n * np.einsum("i...,i...",vi,vi) * np.einsum("i...,i...",E,E)
-    
-    t5 = var_n * eecovv
-    
-    t6 = var_n * evcove
-    
-    t7 = var_n * trcvce
-    
-    est1 = q**2 * (t1+t2+t3+t4+t5+t6+t7)
-    
-    # This expression apparently incurs rounding error. Strange!
-    # est2 = nsq * (evcove + eecovv + trcvce) \
-    #     + var_n * (np.sum(vi*vi,axis=0) * np.sum(E*E,axis=0) + eecovv + evcove + trcvce)
-    
-    # return est1,est2
-    return est1
 
 varem = var_emwork(n, vi, E, var_n, covar_vi, covar_e)
 
