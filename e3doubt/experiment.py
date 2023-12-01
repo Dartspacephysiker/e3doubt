@@ -193,13 +193,13 @@ class Experiment(object):
         from e3doubt import Experiment
         exp = Experiment()
         exp.run_models() #Get IRI ionosphere and MSIS atmosphere
-        dfunc = exp.calc_uncertainties() #Get pandas DataFrame of uncertainties
+        dfunc = exp.get_uncertainties() #Get pandas DataFrame of uncertainties
 
         If you wish to set values of ionospheric and atmospheric parameters manually, use the set_ionos and set_atmos methods.
 
         NOTE
         ====================
-        In practice, running exp.calc_uncertainties() only requires a few of the variables present in self._ionos (Ne, Ti, Te, fracOp, nuin). None of the variables in self._atmos are directly used; they are only used for estimating the collision frequency stored in self._ionos['nuin'].
+        In practice, running exp.get_uncertainties() only requires a few of the variables present in self._ionos (Ne, Ti, Te, fracOp, nuin). None of the variables in self._atmos are directly used; they are only used for estimating the collision frequency stored in self._ionos['nuin'].
 
 
         methods
@@ -207,7 +207,7 @@ class Experiment(object):
 
         public
         -------
-        calc_uncertainties      : Run R function ISgeometry.parameterErrorEstimates for given config
+        get_uncertainties      : Run R function ISgeometry.parameterErrorEstimates for given config
         get_los_vectors         
         get_points              : Get DataFrame containing information about each point, including beam no, range resolution and dwell time
         get_radarconfig         : Get dictionary describing the radar configuration
@@ -338,7 +338,7 @@ class Experiment(object):
 
         print("IRI model ionosphere, MSIS model atmosphere, and collision frequencies are now stored in Experiment._ionos, Experiment._atmos, and Experiment._ionos['nuin'].\nThese variables can be modified/manually specified using the methods Experiment.set_ionos and Experiment.set_atmos")
         print("")
-        print("Next, you can perform uncertainty calculations with Experiment.calc_uncertainties()")
+        print("Next, you can perform uncertainty calculations with Experiment.get_uncertainties()")
 
 
     def _setup_radarconfig(self, transmitter,fwhmtx, receivers, fwhmrx,
@@ -675,7 +675,7 @@ class Experiment(object):
     ):
         """
         Create from selected radar configuration a dictionary of parameters self._rparms that is inputtable to R. 
-        This dictionary is used when  self.calc_uncertainties() is called.
+        This dictionary is used when self.get_uncertainties() is called.
 
         This function is called when the Experiment object is initialized, and every time that set_radarparm() is called.
 
