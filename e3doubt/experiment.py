@@ -773,6 +773,9 @@ class Experiment(object):
         # if fwhmTrans is not None:
         rparms['fwhmTrans'] = to_floatv((fwhmTrans,))
         
+        # if fwhmRec is not None:
+        rparms['fwhmRec'] = to_floatv(fwhmRec)
+        
         # if RXduty is not None:
         rparms['RXduty'] = to_floatv(RXduty)    
         
@@ -941,6 +944,7 @@ class Experiment(object):
                 Ne, Ti, Te, fracOp, nuin = self._ionos.iloc[i][ionocols]
             
                 intT = dwellT * integrationsec  # integration time for this beam
+
                 out = self._ISgeometry.parameterErrorEstimates(
                     gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange,
                     resR,
