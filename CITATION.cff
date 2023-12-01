@@ -1,0 +1,17 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+- given-names: Spencer Mark
+  family-names: Hatch
+  orcid: https://orcid.org/0000-0001-7412-4936
+- given-names: Ilkka
+  family-names: Virtanen
+  orcid: https://orcid.org/0000-0002-7111-8888
+title: "EISCAT_3D Uncertainty Estimation (E3Doubt)"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.10245643
+    description:  e3doubt: First release
+version: v0.2.0
+date-released: 2023-12-01
+                          
