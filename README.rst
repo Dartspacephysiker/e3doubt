@@ -1,3 +1,5 @@
+|DOI|
+
 Overview
 ========
 
@@ -99,4 +101,5 @@ You should have the following modules installed (this is handled automatically w
 - rpy2
 
 
-
+.. |DOI| image:: https://zenodo.org/badge/711767218.svg
+        :target: https://zenodo.org/badge/latestdoi/711767218
