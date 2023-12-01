@@ -11,7 +11,7 @@ title: "EISCAT_3D Uncertainty Estimation (E3Doubt)"
 identifiers:
   - type: doi
     value: 10.5281/zenodo.10245643
-    description:  e3doubt: First release
-version: v0.2.0
+    description:  e3doubt - First release
+version: v0.2.0a
 date-released: 2023-12-01
                           
