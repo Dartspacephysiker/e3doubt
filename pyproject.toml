@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project.urls]
 homepage = "https://github.com/Dartspacephysiker/e3doubt"
+repository = "https://github.com/Dartspacephysiker/e3doubt"
 
 [project]
 name = "e3doubt"
@@ -11,6 +12,9 @@ dynamic = ["version"]
 authors = [
     { name = "Spencer M. Hatch", email = "spencer.hatch@ift.uib.no" },
 ]
+description = "Python frontend for ISgeometry R package, for incoherent scatter radar system uncertainty analysis "
+readme = "README.rst"
+
 maintainers = [
     { name = "Spencer M. Hatch", email = "spencer.hatch@ift.uib.no" },
 ]
