@@ -380,7 +380,6 @@ class Experiment(object):
         for rxi,rx in enumerate(receivers):
             rx, gdlat, glon = self._process_site(rx)
 
-            gdlat, glon = self._sites.loc[rx].values
             gclat = geodetic2geocentriclat(gdlat)
             eR, nR, uR = get_geocentric_enu_vectors_cartesian(geodetic2geocentriclat(gdlat),glon,degrees=True)
             R = geodeticheight2geocentricR(gdlat, 0.) * uR
@@ -1258,9 +1257,12 @@ class Experiment(object):
     def _process_site(self, trx):
             
         if isinstance(trx,tuple):
-            assert len(trx) == 3
+            assert len(trx) == 3,f"Invalid specification of transmitter/receiver: {trx}."+\
+                "\nWhen providing custom transmitter/receiver site, provide a three-element tuple: ('SITENAME',site_geodetic_lat,site_geo_lon)"
+
             gdlat, glon = trx[1:]
             trx = trx[0]
+
         elif isinstance(trx,str):
             assert trx in list(self._sites.index),f"Requested site '{trx}' not in list of supported sites: {list(self._sites.index)}"
     
