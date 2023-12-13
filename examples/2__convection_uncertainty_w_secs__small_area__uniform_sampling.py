@@ -8,13 +8,24 @@ import ppigrf
 
 from e3doubt import experiment
 
-from e3doubt.utils import get_supported_sites
+from e3doubt.utils import get_supported_sites, get_perpendicular_velocity_mapping_matrix
 from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc,geodetic2geocentriclat
 
 import e3doubt.radar_utils
 from importlib import reload
 reload(e3doubt.radar_utils)
 from e3doubt.radar_utils import get_2D_csgrid_az_el
+
+import matplotlib as mpl
+mpl.rcParams.update({'font.size': 13})
+
+try:
+    import lompe
+    from lompe import cs
+    from secsy import CSplot
+except:
+
+    print("You need to have lompe installed to run this example!\nTry Option 1 or Option 2 here: https://github.com/klaundal/lompe")
 
 def gridedges(lon,lat):
     #bottom edge
@@ -61,6 +72,7 @@ Npt = exp.N['pt']
 
 igrf_refdate = datetime(2020,12,1)
 apex_refh = 110
+mapto_h = apex_refh
 
 gdlat, glon, h = points['gdlat'].values,points['glon'].values, points['h'].values
 
@@ -86,9 +98,6 @@ covp = np.transpose(np.einsum('ij...,jk...,lk...',B,covmats,B),axes=[1,2,0])  # 
 # Let's go for div-free SECS to begin with
 
 # set up cubed sphere projection and grid
-import lompe
-from lompe import cs
-from secsy import CSplot
 # sites = get_supported_sites()
 
 tx = radarconfig['tx']
@@ -97,7 +106,7 @@ RE = 6371.2e3
 RI = RE+110e3
 L = 200e3
 W = 200e3
-Lres = Wres = 5e3
+Lres = Wres = 20e3
 wshift = -Wres//2
 # wshift = 0.
 projection = cs.CSprojection((glon_t, gclat_t), 0) # central (lon, lat) and orientation of the grid
@@ -113,6 +122,7 @@ Kp   = 4     # for Hardy model
 F107 = 100   # for EUV conductance
 
 # functions for conductances to be passed to the Lompe model
+# Don't actually need these, just dummy functions that must be defined for initializing a lompe.Emodel object
 SH = lambda lon = grid.lon, lat = grid.lat: lompe.conductance.hardy_EUV(lon, lat, Kp, time, 'hall')
 SP = lambda lon = grid.lon, lat = grid.lat: lompe.conductance.hardy_EUV(lon, lat, Kp, time, 'pedersen')
 
@@ -143,7 +153,7 @@ var_vn = covp[1,1,:]
 covar_vevn = covp[0,1,:]
 covar_vnve = covp[1,0,:]
 
-assert np.all(np.isclose(covar_vevn,covar_vnve))  # sanity check
+assert np.all(np.isclose(covar_vevn,covar_vnve))  # sanity check, covariance matrix must be positive symmetric
 
 ## Form data covariance matrix
 Neval = np.prod(grid.lon.shape)
@@ -160,9 +170,9 @@ GTG = G.T@Cdinv@G
 
 # Applying regularization?
 l1 = 0.
-l1 = 0.00001
-l1 = 1e2
-l1 = 1e-1
+# l1 = 0.00001
+# l1 = 1e2
+l1 = 1e0
 LTL = l1 * np.median(GTG)*np.diag(np.ones(GTG.shape[0]))
 
 if not np.isclose(l1,0.):
@@ -177,7 +187,7 @@ Cpd = Gobs@Cpm@Gobs.T
 vm_e_var = np.diag(Cpd[:Neval,:Neval])   # eastward v-model variance
 vm_n_var = np.diag(Cpd[Neval:,Neval:])   # northward v-model variance
 
-doresplot = True
+doresplot = False
 if doresplot:
    from lompe.model.visualization import resolutionplot,locerrorplot
    model.Rmatrix = Cpm.dot(GTG)
@@ -226,6 +236,13 @@ csaxes[0].scatter(points['glon'].values, points['gclat'].values,
                   color='C2',
                   label='obs')
 
+csaxes[0].scatter(glonmap, gclatmap,
+                  marker='v', s=10,
+                  zorder=21,
+                  alpha=0.5,
+                  color='C2',
+                  label='mapped ('+str(mapto_h)+' km)')
+
 csaxes[1].scatter(grid.lon, grid.lat,
                   marker='s', s=10,
                   zorder=21,
@@ -269,7 +286,7 @@ for csax in csaxes[2:]:
     csax.plot(glonb,gclatb,color='k',alpha=0.5)
 
 
-HIGHRES = True
+HIGHRES = False
 for cl in grid.projection.get_projected_coastlines(resolution='10m' if HIGHRES else '50m'):
     clo, cla = grid.projection.cube2geo(cl[0], cl[1])
 

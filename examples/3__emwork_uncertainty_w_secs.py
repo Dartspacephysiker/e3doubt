@@ -524,9 +524,10 @@ plt.sca(ax0)
 # plt.hist(shows,label=labs)
 
 emworkstr = "$\mathbf{j}\cdot\mathbf{E}$"
-plt.hist(np.abs(emwork)/scale,label=emworkstr+" = $q n \mathbf{v}_i \cdot \mathbf{E}$",alpha=0.5)#,bins=bins)
-plt.hist(np.abs(np.sqrt(varem))/scale,label="stddev("+emworkstr+")",alpha=0.5)#,bins=bins)
-plt.hist(np.abs(np.sqrt(varem_zero))/scale,label="stddev("+emworkstr+") (assume E=vi=0)",alpha=0.5)#,bins=bins)
+# plt.hist(np.abs(emwork)/scale,label="abs("+emworkstr+" = $q n \mathbf{v}_i \cdot \mathbf{E}$)",alpha=0.5)#,bins=bins)
+plt.hist(emwork/scale,label=emworkstr+" = $q n \mathbf{v}_i \cdot \mathbf{E}$",alpha=0.5)#,bins=bins)
+plt.hist(np.sqrt(varem)/scale,label="stddev("+emworkstr+")",alpha=0.5)#,bins=bins)
+plt.hist(np.sqrt(varem_zero)/scale,label="stddev("+emworkstr+") (assume E=vi=0)",alpha=0.5)#,bins=bins)
 
 plt.xlabel("EM work [nW/m³]")
 

@@ -7,7 +7,7 @@ EISCAT_3D Uncertainty Estimation (e3doubt)
 
 e3doubt is a tool for calculating an order-of-magnitude (hopefully!) estimate of the uncertainties in the plasma parameters measured using the incoherent scatter radar technique with different beam configurations and radar system parameters. It is designed with EISCAT_3D in mind, but is readily adaptable to other radar configurations.   
 
-We recommend using the python scripts in the `examples` folder to learn how to use e3doubt.
+We recommend using the python scripts in the `examples` folder to learn how to use e3doubt. (Some of these examples require the `lompe <https://github.com/klaundal/lompe>`_ Python package.)
 
 Prerequisites
 =======
@@ -35,7 +35,7 @@ The package may someday be pip-installable from GitHub directly with::
 
 This could also be done within a minimal conda environment created with, e.g. ``mamba create -n e3doubt python=3.10 fortran-compiler``
 
-Option 1: mamba/conda install
+Option 1: mamba/conda install (RECOMMENDED)
 ---------------------------------------------------------------
 
 Get the code, create a suitable conda environment, then use pip to install the package in editable (development) mode::

@@ -20,6 +20,13 @@ from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc
 
 from apexpy import Apex
 
+try:
+    import lompe
+    from lompe import cs
+    from secsy import CSplot
+except:
+    print("Must have lompe installed to get theory matrices for  this example!\nTry Option 1 or Option 2 here: https://github.com/klaundal/lompe")
+
 plotdir = './'
 import matplotlib as mpl
 mpl.rcParams.update({'savefig.directory': plotdir})
@@ -99,9 +106,6 @@ covp = np.transpose(np.einsum('ij...,jk...,lk...',B,covmats,B),axes=[1,2,0])  # 
 # Let's go for div-free SECS to begin with
 
 # set up cubed sphere projection and grid
-import lompe
-from lompe import cs
-from secsy import CSplot
 # sites = get_supported_sites()
 
 tx = radarconfig['tx']
@@ -142,6 +146,7 @@ Kp   = 4     # for Hardy model
 F107 = 100   # for EUV conductance
 
 # functions for conductances to be passed to the Lompe model
+# Don't actually need these, just dummy functions that must be defined for initializing a lompe.Emodel object
 SH = lambda lon = grid.lon, lat = grid.lat: lompe.conductance.hardy_EUV(lon, lat, Kp, time, 'hall')
 SP = lambda lon = grid.lon, lat = grid.lat: lompe.conductance.hardy_EUV(lon, lat, Kp, time, 'pedersen')
 
