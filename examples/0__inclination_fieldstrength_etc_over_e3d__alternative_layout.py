@@ -20,7 +20,9 @@ from e3doubt.utils import get_supported_sites,field_geometry_lonlat
 from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc
 
 import e3doubt.radar_utils
-from e3doubt.radar_utils import get_point_az_el_geod,ECEFtosphericalENUMatrix,get_range_line
+from importlib import reload
+reload(e3doubt.radar_utils)
+from e3doubt.radar_utils import get_point_az_el_geod,ECEFtosphericalENUMatrix,get_range_line, get_field_aligned_beam
 
 sites = get_supported_sites()
 
@@ -35,8 +37,8 @@ xt, yt, zt = geodetic2geocentricXYZ(gdlat_t, glon_t, 0, returnR = False, degrees
 ##############################
 # Find az, el where Skibotn transceiver aligns best with stuff
 
-# 1. Generate a bunch of points over Skibotn
-h = 200                         # km
+## 1. Generate a bunch of points over Skibotn
+h = 100                         # km
 ddeg = 0.05
 degdimlat = 10.0
 # degdimlon = 20.0
@@ -66,7 +68,7 @@ gclatp = 90.-thetap
 # assert np.all(np.isclose(lat2,gdlatp))
 # assert np.all(np.isclose(lon2,glonp))
 
-# 2. Get B-field unit vectors b_k at points in question
+## 2. Get B-field unit vectors b_k at points in question
 
 Bp_sph = np.vstack(ppigrf.igrf_gc(rp,thetap,glonp,igrf_refdate))
 magBp = np.linalg.norm(Bp_sph,axis=0)
@@ -85,11 +87,11 @@ bp_ecef = np.einsum('ij...,i...',Rvec_SPHENU_TO_ECEF_p,bp_sphenu).T
 # check = Rvec_SPHENU_TO_ECEF_1p@bp_sphenu[:,0]
 # assert np.all(np.isclose(check,bp_ecef[:,0]))
 
-# 3. Get unit vectors l_k that point from points in question to Skibotn
+## 3. Get unit vectors l_k that point from points in question to Skibotn
 L_ecef = np.stack([xp-xt,yp-yt,zp-zt])
 l_ecef = -L_ecef/np.linalg.norm(L_ecef,axis=0)
 
-# 4. Find point k for which dot(b_k,l_k) is maximized (or actually minimized)
+## 4. Find point k for which dot(b_k,l_k) is maximized (or actually minimized)
 dot_bl = np.sum(l_ecef*bp_ecef,axis=0)
 
 win_ip = np.argmax(dot_bl)
@@ -98,16 +100,25 @@ angler = np.rad2deg(np.arccos(dot_bl))
 # angler[angler > 90] = 90-angler
 angler = angler.reshape(dlshape)
 
-# 5. Get el, az of this point
+## 5. Get el, az of this point
 
 # lwin = l_ecef[:,win_ip]
 # az0 = np.rad2deg(np.arctan2(np.sum(e_ecef*lwin),np.sum(n_ecef*lwin)))
 # eaz0 = np.sin(np.deg2rad(az0))*e_ecef+np.cos(np.deg2rad(az0))*n_ecef
 # el0 = np.rad2deg(np.arctan2(np.sum(lwin*u_ecef),np.sum(lwin*eaz0)))
 
+gdlatwin, glonwin = gdlatp[win_ip],glonp[win_ip]
+
 az0, el0 = get_point_az_el_geod(gdlat_t,glon_t,gdlatp[win_ip],glonp[win_ip],h)
 
 incp, decp, diplatp = field_geometry_lonlat(glonp, gdlatp, igrf_refdate, h_km=apex_refh)
+
+# just to test get_field_aligned_beam function
+az1,el1, gdlat1, glon1 = get_field_aligned_beam(h,gdlat_tx=gdlat_t,glon_tx=glon_t,
+                                                ddeg=0.05,
+                                                degdimlat=10.0,
+                                                degdimlon=20.0,
+)
 
 ##############################
 ## Make figure, show things

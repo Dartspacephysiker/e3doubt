@@ -14,9 +14,9 @@ from e3doubt import experiment
 from e3doubt.utils import get_supported_sites
 from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc,geoc2geod,geodeticheight2geocentricR
 
-# import e3doubt.radar_utils
-# reload(e3doubt.radar_utils)
-from e3doubt.radar_utils import get_point_az_el_geod,get_2D_csgrid_az_el
+import e3doubt.radar_utils
+reload(e3doubt.radar_utils)
+from e3doubt.radar_utils import get_point_az_el_geod,get_2D_csgrid_az_el, get_field_aligned_beam
 
 from apexpy import Apex
 
@@ -82,10 +82,17 @@ elif showgrid == 'med1':
 else:
     assert 2<0,"invalid 'wantgrid' selection"
 
-az, el, gdlat, glon, h, (grid, projection) = get_2D_csgrid_az_el(gdlat_t, glon_t, h=h_grid,
-                                                                 L=L, W=W,
-                                                                 Lres=Lres, Wres=Wres,
-                                                                 return_grid=True)
+# az1,el1, gdlat1, glon1 = get_field_aligned_beam(h,gdlat_tx=gdlat_t,glon_tx=glon_t,
+#                                                 ddeg=0.05,
+#                                                 degdimlat=10.0,
+#                                                 degdimlon=20.0,
+# )
+
+az, el, gdlat, glon, h, grid = get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=h_grid,
+                                                   L=L, W=W,
+                                                   Lres=Lres, Wres=Wres,
+                                                   return_grid=True,
+                                                   ctr_on_fieldaligned_beam=True)
 
 # projection = cs.CSprojection((glon_t, gclat_t), 0) 
 # grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = 0)

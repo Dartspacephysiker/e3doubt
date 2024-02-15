@@ -1,6 +1,8 @@
 import numpy as np
+import ppigrf
+from datetime import datetime
 from .vectors import dotprod,crossprod,vecmag
-from .geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc,geoc2geod,ECEF2geodetic
+from .geodesy import geodeticheight2geocentricR,geocentric2geodeticlat,geod2geoc,geoc2geod,ECEF2geodetic,geodetic2geocentricXYZ
 
 import warnings
 
@@ -267,9 +269,44 @@ def get_point_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
 
 def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3, Wres=10e3,
                         wshift = None,
-                        return_grid=False):
+                        return_grid=False,
+                        ctr_on_fieldaligned_beam=False,
+                        # ctr__refheight=200.,
+):
     """
     Get azimuths and elevations of selection of points defined on a 2D grid in cubed sphere coordinates.
+
+    Inputs
+    ======
+    gdlat_t : float, default False
+        Geodetic latitude of the transmitter site in deg
+    glon_t  : float, default False
+        Geographic longitude of the transmitter site in deg
+
+
+    Keywords
+    ========
+    h_grid  : float, default 200.
+        Reference altitude of the grid in km
+    L       : float, default 100e3
+        Length of the grid in meters(NB!)
+    W       : float, default 100e3
+        Width of the grid in meters(NB!)
+    Lres    : float, default 10e3
+        Grid spacing along the length of the grid in meters
+    Wres    : float, default 10e3
+        Grid spacing along the width of the grid in meters
+    wshift  : float, default None
+        Some shift along the width direction in meters?
+
+    ctr_on_fieldaligned_beam  : bool, default False
+        If True, center the grid around the transmitter beam (located at gdlat_t, glon_t)
+        that is most aligned with Earth's magnetic field. The geodlat and glon of this 
+        location is found using the function 'get_field_aligned_beam' and reference height 
+        'h_grid'.
+
+    Outputs
+    =======
 
     if return_grid:
         return az, el, gdlat, glon, h, (grid, projection)
@@ -290,14 +327,30 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
     # Lres = Lres*1e3
     # Wres = Wres*1e3
 
+    if ctr_on_fieldaligned_beam:
+        print(f"Finding gdlat/glon of field-aligned beam at ref height={h_grid} km")
+        az1,el1, gdlat1, glon1 = get_field_aligned_beam(h_grid,
+                                                        gdlat_tx=gdlat_t,
+                                                        glon_tx=glon_t,
+                                                        ddeg=0.02,
+                                                        degdimlat=5.0,
+                                                        degdimlon=8.0,
+        )
+        ctrgdlat, ctrglon = gdlat1, glon1
+    else:
+        ctrgdlat, ctrglon = gdlat_t, glon_t
+
     if wshift is None:
         wshift = -Wres//2
 
-    theta, RI, _, _ = geod2geoc(gdlat_t, h_grid, 0., 0.,)
-    gclat_t = 90.-theta
+    # theta, RI, _, _ = geod2geoc(gdlat_t, h_grid, 0., 0.,)
+    # gclat_t = 90.-theta
+    theta, RI, _, _ = geod2geoc(ctrgdlat, h_grid, 0., 0.,)
+    ctrgclat = 90.-theta
     RI *= 1e3                   # to meters
-
-    projection = cs.CSprojection((glon_t, gclat_t), 0) 
+    
+    # projection = cs.CSprojection((glon_t, gclat_t), 0) 
+    projection = cs.CSprojection((ctrglon, ctrgclat), 0) 
     grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = wshift)
     
     gclat, glon = grid.lat.ravel(), grid.lon.ravel()
@@ -387,6 +440,88 @@ def get_range_line(gdlatRec, glonRec, az, el, h_km, hRec=0., returnbonus=False, 
         return r_los,dict(d=d,phat=phat,R=R,e=eR,n=nR,u=uR)
     else:
         return r_los
+
+
+def get_field_aligned_beam(h,gdlat_tx=69.34,glon_tx=20.31,
+                           ddeg=0.025,
+                           degdimlat=5.0,
+                           degdimlon=10.0,
+                           igrf_refdate = datetime(2020,12,1),
+):
+    """
+    Inputs
+    =====
+    h        : float, default 200.
+        Geodetic altitude in km of sphere over which to find most field-aligned az,el
+
+    Keywords
+    ========
+    gdlat_tx : float, default Skibotn transceiver geod lat
+        Geodetic latitude of transmitter at h = 0 km
+    glon_tx  : float, default Skibotn transceiver geod lat
+        Geographic longitude of transmitter at h = 0 km
+    ddeg     : float, default 0.05
+        Spacing between grid points in latitude (and longitude)
+    degdimlat: float, default 10.0
+        Span of grid around gdlat_tx, (gdlat_tx±degdimlat)
+    degdimlon: float, default 20.0
+        Span of grid around glon_tx, (glon_tx±degdimlat)
+
+    Outputs
+    ========
+    az,el,gdlat,glon : azimuth, elevation, geodetic latitude, and geographic longitude of most field-aligned point
+    """
+
+    dlat = np.arange(-degdimlat,degdimlat,ddeg)
+    dlon = np.arange(-degdimlon,degdimlon,ddeg)
+    
+    dlat, dlon = np.meshgrid(dlat,dlon,indexing='ij')
+    
+    dlshape = dlat.shape
+    
+    dlat, dlon = dlat.ravel(), dlon.ravel()
+    
+    gdlatp = gdlat_tx + dlat
+    glonp = glon_tx+dlon
+    
+    xt, yt, zt = geodetic2geocentricXYZ(gdlat_tx, glon_tx, 0, returnR = False, degrees = True)
+    xp, yp, zp = geodetic2geocentricXYZ(gdlatp, glonp, h, returnR = False, degrees = True)
+    
+    thetap, rp, _, _ = geod2geoc(gdlatp, h, 0., 0.)
+    gclatp = 90.-thetap
+    
+    ## 2. Get B-field unit vectors b_k at points in question
+    
+    Bp_sph = np.vstack(ppigrf.igrf_gc(rp,thetap,glonp,igrf_refdate))
+    magBp = np.linalg.norm(Bp_sph,axis=0)
+    
+    # unit B-field vectors in spherical (r, theta, phi) coordinates
+    bp_sph = Bp_sph/np.linalg.norm(Bp_sph,axis=0)
+    bp_sphenu = np.stack([bp_sph[2], -bp_sph[1], bp_sph[0]])
+    
+    Rvec_SPHENU_TO_ECEF_p = ECEFtosphericalENUMatrix(glonp, gclatp)
+    
+    bp_ecef = np.einsum('ij...,i...',Rvec_SPHENU_TO_ECEF_p,bp_sphenu).T
+    
+    ## 3. Get unit vectors l_k that point from points in question to Skibotn
+    L_ecef = np.stack([xp-xt,yp-yt,zp-zt])
+    l_ecef = -L_ecef/np.linalg.norm(L_ecef,axis=0)
+    
+    ## 4. Find point k for which dot(b_k,l_k) is maximized (or actually minimized)
+    dot_bl = np.sum(l_ecef*bp_ecef,axis=0)
+    
+    win_ip = np.argmax(dot_bl)
+    
+    angler = np.rad2deg(np.arccos(dot_bl))
+    # angler[angler > 90] = 90-angler
+    angler = angler.reshape(dlshape)
+    
+    gdlat, glon = gdlatp[win_ip],glonp[win_ip]
+
+    ## 5. Get el, az of this point
+    az, el = get_point_az_el_geod(gdlat_tx,glon_tx,gdlatp[win_ip],glonp[win_ip],h)
+        
+    return az,el,gdlat,glon
 
 
 def ECEFtosphericalENUMatrix(lon, gclat):
