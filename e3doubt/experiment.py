@@ -1112,7 +1112,7 @@ class Experiment(object):
         covmat = []
         for n in range(N):
             try:
-                covm = np.linalg.inv(los[:,:,n].T@np.diag(1/dv[:,n])@los[:,:,n] + Cminv) 
+                covm = np.linalg.inv(los[:,:,n].T@np.diag(1/dv[:,n]**2)@los[:,:,n] + Cminv) 
             except:
                 print(f"Couldn't invert precision matrix for point {n}!")
                 covm = np.ones((3,3))*np.nan
