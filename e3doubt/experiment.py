@@ -880,8 +880,8 @@ class Experiment(object):
 
                     # scale = integfac/integfac_previous
                     
-                    integfac = np.sqrt(integrationsec)
-                    integfac_previous = np.sqrt(self._dfunc_kw['integrationsec'])
+                    integfac = 1/np.sqrt(integrationsec)
+                    integfac_previous = 1/np.sqrt(self._dfunc_kw['integrationsec'])
 
                     scale = integfac/integfac_previous
 
