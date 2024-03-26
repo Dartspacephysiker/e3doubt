@@ -107,6 +107,7 @@ You should have the following modules installed (this is handled automatically w
 How to cite
 ===========
 Hatch, S. M., and I. Virtanen (2024). e3doubt [Computer software]. doi:10.5281/zenodo.10683228
+
 I. Virtanen (2023). ISgeometry [Computer software]. doi:10.5281/zenodo.6623186
 
 References
