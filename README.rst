@@ -5,7 +5,7 @@ Overview
 
 EISCAT_3D Uncertainty Estimation (e3doubt)
 
-e3doubt is a tool for calculating an order-of-magnitude (hopefully!) estimate of the uncertainties in the plasma parameters measured using the incoherent scatter radar technique with different beam configurations and radar system parameters. It is designed with EISCAT_3D in mind, but is readily adaptable to other radar configurations.   
+e3doubt is a Python frontend to the ISgeometry R package developed by I. Virtanen (UOulu), and is a tool for estimating the uncertainties in the plasma parameters measured using the incoherent scatter radar technique with different beam configurations and radar system parameters. It is designed with EISCAT_3D in mind, but is readily adaptable to other radar configurations.   
 
 We recommend using the python scripts in the `examples` folder to learn how to use e3doubt. (Some of these examples require the `lompe <https://github.com/klaundal/lompe>`_ Python package.)
 
@@ -103,3 +103,16 @@ You should have the following modules installed (this is handled automatically w
 
 .. |DOI| image:: https://zenodo.org/badge/711767218.svg
         :target: https://zenodo.org/badge/latestdoi/711767218
+
+How to cite
+===========
+Hatch, S. M., and I. Virtanen (2024). e3doubt [Computer software]. doi:10.5281/zenodo.10683228
+I. Virtanen (2023). ISgeometry [Computer software]. doi:10.5281/zenodo.6623186
+
+References
+==========
+e3doubt publication coming soon!
+
+The mathematical development of ISgeometry is described in Appendix B of Lehtinen, Virtanen, and Orispää (2014).
+
+Lehtinen, M., Virtanen, I. I., & Orispää, M. R. (2014). EISCAT_3D Measurement Methods Handbook. https://urn.fi/URN:ISBN:9789526205854
