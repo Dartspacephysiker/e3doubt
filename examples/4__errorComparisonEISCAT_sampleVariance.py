@@ -525,7 +525,8 @@ for pan in rowpanels:
             transform = pan.transAxes)
     pancount += 1
     
-plt.savefig("error_comparison_"+radar+"_"+exper+"_"+measdate.strftime("%Y%m%dT%H%M%S")+".png",dpi=300)
+plt.tight_layout()
+plt.savefig("plots/4__error_comparison_"+radar+"_"+exper+"_"+measdate.strftime("%Y%m%dT%H%M%S")+".png",dpi=300)
 # plt.show()
 
 

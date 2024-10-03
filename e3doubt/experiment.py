@@ -86,7 +86,7 @@ DEFAULT_RADAR_PARMS = dict(fradar=233e6,  # Radar frequency [Hz]
                            RXduty=(0.75,1.,1.),      # Receiver duty cycle
                            Tnoise=300, # Noise temperature [K] for receiver sites
                            Pt=3.5e6,      # Transmitter power in Watts
-                           fwhmRange=2,   # Range resolution in ACF decoding (i.e., bit length of code?) [km]
+                           fwhmRange=2,   # Range resolution in ACF decoding, i.e., modulation bit length (= "bit length of code"?) [km]
                            mineleTrans=30,
                            mineleRec=(30,30,30),
                            phArrTrans=True,
@@ -160,7 +160,8 @@ class Experiment(object):
                     Heights at which to sample specified azimuths and elevations. If not same 
                     length as az, h will be broadcast to fit with shape of *broadcasted* az and el
         resR            : 1D array-like OR scalar (defaults to fwhmRange in DEFAULT_RADAR_PARMS)
-                    Range resolution for each altitude. If array, must be same length as h.
+                    Range resolution for each altitude (or "range resolution after range integration").
+                    If array, must be same length as h.
                     resR should generally be an integer multiple of fwhmRange.
                     NOTE: can be modified after initialization using method set_range_resolution().
         dwell_times     : 1D array-like OR scalar

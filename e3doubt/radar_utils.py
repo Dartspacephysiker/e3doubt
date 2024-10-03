@@ -183,6 +183,68 @@ def get_geocentric_enu_vectors_cartesian(gclat,gclon,degrees=True):
     return e,n,u
 
 
+def get_points_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=0.):
+    """
+    Given the location of the receiver (as a gdlat,glon pair) and the 
+    locations of the scattering point R_S (as ECEF points), 
+    calculate and return the receiver's azimuth and elevation in degrees.
+
+    NOTE: This is just a version of get_point_az_el_geod_ECEF when input R_S is an array
+
+    hRec : float
+            Geodetic altitude of the receiver in km
+
+    Spencer Mark Hatch
+    2024/09/20
+    """
+
+    # 
+    if len(R_S.shape) == 1:
+      assert (R_S.size == 3)   
+      if R_S.shape != (1,3):
+          R_S = R_S[np.newaxis,:]
+
+    elif len(R_S.shape) == 2:
+        assert R_S.shape[1] == 3,"R_S must have shape (N, 3) or (3)"
+
+        # N = R_S.shape[0]
+        # print(f"Getting az, el for {N} points")
+
+    # # local enu vectors at transceiver
+    # e_enu = np.array([1,0,0])
+    # n_enu = np.array([0,1,0])
+    # u_enu = np.array([0,0,1])
+
+    theta, r, _, _ = geod2geoc(gdlatRec, hRec, 0., 0.)
+    theta, r, _, _ = geod2geoc(gdlatRec, hRec, 0., 0.)
+
+    rRec, gclatRec = r, 90.-theta
+
+    eR, nR, uR = get_geodetic_enu_vectors_in_ECEF(gdlatRec, glonRec, hRec=hRec)
+
+    thr = np.deg2rad(theta)
+    phr = np.deg2rad(glonRec)
+    sth, cth = np.sin(thr), np.cos(thr)
+    sph, cph = np.sin(phr), np.cos(phr)
+
+    # NOTE: Here we want to use the geocentric radial vector (in ECEF coords), not geodetic "up" vector!
+    R_R = rRec * np.array([sth*cph, sth*sph, cth])[np.newaxis,:]
+
+    dR = R_S-R_R
+
+    # Get receiver azimuth for pointing at R_S
+    azR = np.arctan2(dotprod(dR,eR),dotprod(dR,nR))
+
+    # Azimuthal vector
+    e_azR = (np.sin(azR)*np.broadcast_to(eR,(len(azR),3)).T).T + (np.cos(azR)*np.broadcast_to(nR,(len(azR),3)).T).T
+
+    # Get receiver elevation for pointing at R_S
+    elR = np.arctan2(dotprod(dR,uR),dotprod(dR,e_azR))
+
+    return np.rad2deg(azR).squeeze(), np.rad2deg(elR).squeeze()
+
+
+
 def get_point_az_el_geod_ECEF(gdlatRec,glonRec,R_S,hRec=0.):
     """
     Given the location of the receiver (as a gdlat,glon pair) and the 
@@ -560,6 +622,20 @@ def rvec(thetad,phid):
     sph, cph = np.sin(phr), np.cos(phr)
 
     return np.array([sth*cph, sth*sph, cth])[np.newaxis,:]
+
+
+def get_kvec(x1,y1,z1,x2,y2,z2):
+    """
+    Get unit vector(s) that point from location 1 (given by x1, y1, z1) to location 2 (x2, y2, z2) for Cartesian coordinates
+    """
+    # points from 1 to 2
+    dx12, dy12, dz12 = x2-x1,y2-y1,z2-z1
+
+    #get unit vector
+    khat = np.vstack([dx12,dy12,dz12])
+    khat = khat/np.linalg.norm(khat,axis=0)
+
+    return khat
 
 
 # if __name__ == "__main__":

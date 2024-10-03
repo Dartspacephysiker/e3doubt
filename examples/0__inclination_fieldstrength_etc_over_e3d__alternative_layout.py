@@ -311,4 +311,4 @@ plt.grid(color='gray',lw=0.5)
 
 plt.tight_layout()
 
-plt.savefig("./plots/0__inclination_fieldstrength_etc_over_e3d__alt.png")
+plt.savefig(f"./plots/0__inclination_fieldstrength_etc_over_e3d__altlayout_refh{h}.png")

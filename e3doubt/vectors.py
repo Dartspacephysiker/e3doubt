@@ -10,6 +10,10 @@ def dotprod(a,b):
 
     Each value corresponding to the dot products of a pair of vectors in a and b.
 
+    NOTE: This also works if a has shape (1,3) and b has shape (N,3), e.g.,
+    dotprod(np.array([[1,0,0]]),np.array([[1,0,0],[0,1,0],[0,0,1],[0.5,0.5,0]]))
+    # array([1. , 0. , 0. , 0.5])
+
     SMH
     Birkeland Centre for Space Science
     2020-10-02
