@@ -60,9 +60,13 @@ az, el, gdlatg, glong, h, gridm = get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=h_
                                                       wshift=wshiftgrid,
                                                       return_grid=True)
 
-H  = np.array([200,220])
+dr = 25
+fwhmRange = 2
+H  = np.arange(200,400+dr,dr)
 
-exp = experiment.Experiment(az=az,el=el,h=H)
+exp = experiment.Experiment(az=az,el=el,h=H,resR=dr)
+print(f"Setting fhwmRange to {fwhmRange} km")
+exp.set_radarparm("fwhmRange",fwhmRange)
 exp.run_models()
 dfunc = exp.get_uncertainties(integrationsec=300)
 
@@ -118,11 +122,10 @@ xi_p, eta_p = grid.projection.geo2cube(glonmap, gclatmap)
 
 ## Set up lompe model object so that we can rip out convection matrices and stuff
 
-Kp   = 4     # for Hardy model
-F107 = 100   # for EUV conductance
-
 # functions for conductances to be passed to the Lompe model
 # Don't actually need these, just dummy functions that must be defined for initializing a lompe.Emodel object
+Kp   = 4     # for Hardy model
+F107 = 100   # for EUV conductance
 SH = lambda lon = grid.lon, lat = grid.lat: lompe.conductance.hardy_EUV(lon, lat, Kp, time, 'hall')
 SP = lambda lon = grid.lon, lat = grid.lat: lompe.conductance.hardy_EUV(lon, lat, Kp, time, 'pedersen')
 
@@ -187,7 +190,7 @@ Cpd = Gobs@Cpm@Gobs.T
 vm_e_var = np.diag(Cpd[:Neval,:Neval])   # eastward v-model variance
 vm_n_var = np.diag(Cpd[Neval:,Neval:])   # northward v-model variance
 
-doresplot = False
+doresplot = True
 if doresplot:
    from lompe.model.visualization import resolutionplot,locerrorplot
    model.Rmatrix = Cpm.dot(GTG)

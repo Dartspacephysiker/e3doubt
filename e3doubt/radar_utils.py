@@ -331,8 +331,12 @@ def get_point_az_el_geod(gdlatRec,glonRec,gdlatScat,glonScat,hScat,hRec=0.):
 
 def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3, Wres=10e3,
                         wshift = None,
+                        orientation=0.,
+                        gdlat_ctr=None,
+                        glon_ctr=None,
                         return_grid=False,
                         ctr_on_fieldaligned_beam=False,
+                        atol=0.2,
                         # ctr__refheight=200.,
 ):
     """
@@ -340,32 +344,47 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
 
     Inputs
     ======
-    gdlat_t : float, default False
+    gdlat_t : float
         Geodetic latitude of the transmitter site in deg
-    glon_t  : float, default False
+    glon_t  : float
         Geographic longitude of the transmitter site in deg
 
 
     Keywords
     ========
-    h_grid  : float, default 200.
+    h_grid      : float, default 200.
         Reference altitude of the grid in km
-    L       : float, default 100e3
+    L           : float, default 100e3
         Length of the grid in meters(NB!)
-    W       : float, default 100e3
+    W           : float, default 100e3
         Width of the grid in meters(NB!)
-    Lres    : float, default 10e3
+    Lres        : float, default 10e3
         Grid spacing along the length of the grid in meters
-    Wres    : float, default 10e3
+    Wres        : float, default 10e3
         Grid spacing along the width of the grid in meters
-    wshift  : float, default None
+    wshift      : float, default None
         Some shift along the width direction in meters?
+    orientation : scalar or 2-element array-like 
+        Orientation of the cube surface.
+        If scalar: angle in degrees, that defines the the xi axis.
+        Orientation = 0 / 180 implies a xi axis in the east-west direction, positive towards east / west. 
+        Orientation = 90 / 270 implies a xi axis towards north / south. 
+        If 2-element array-like: The elements denote the eastward and northward components
+        of a vector that is aligned with the xi axis. (See klaundal's "secsy" documentation for more info.)
+    gdlat_ctr   : float, default gdlat_t
+        Geodetic latitude of the grid center in deg.
+    glon_ctr    : float, default gdlat_t
+        Geographic longitude of the grid center in deg.
+            
 
     ctr_on_fieldaligned_beam  : bool, default False
         If True, center the grid around the transmitter beam (located at gdlat_t, glon_t)
         that is most aligned with Earth's magnetic field. The geodlat and glon of this 
         location is found using the function 'get_field_aligned_beam' and reference height 
         'h_grid'.
+
+    atol        : float, default 0.2 [km]
+        Absolute tolerance for inaccuracy in km. 
 
     Outputs
     =======
@@ -400,7 +419,9 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
         )
         ctrgdlat, ctrglon = gdlat1, glon1
     else:
-        ctrgdlat, ctrglon = gdlat_t, glon_t
+        ctrgdlat = gdlat_t if (gdlat_ctr is None) else gdlat_ctr
+        ctrglon = glon_t if (glon_ctr is None) else glon_ctr
+        # ctrgdlat, ctrglon = gdlat_t, glon_t
 
     if wshift is None:
         wshift = -Wres//2
@@ -412,12 +433,12 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
     RI *= 1e3                   # to meters
     
     # projection = cs.CSprojection((glon_t, gclat_t), 0) 
-    projection = cs.CSprojection((ctrglon, ctrgclat), 0) 
+    projection = cs.CSprojection((ctrglon, ctrgclat), orientation) 
     grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = wshift)
     
     gclat, glon = grid.lat.ravel(), grid.lon.ravel()
     gdlat, h, _, _ = geoc2geod(90.-gclat, grid.R/1e3, 0., 0.)
-    assert np.all(np.isclose(h,h_grid,atol=0.2))  # permit inaccurancy of 200 m
+    assert np.all(np.isclose(h,h_grid,atol=atol))  # permit inaccurancy of 200 m by default
     npt = gdlat.size
     
     az, el = np.zeros(npt), np.zeros(npt)
