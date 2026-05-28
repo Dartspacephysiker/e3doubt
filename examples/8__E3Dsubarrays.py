@@ -42,7 +42,6 @@ hh = np.array([100., 150., 200.,300., 500., 600.])
 # final integrated range resolution at each alttiude
 # this can be larger than the bit length. Again, not prepared for long pulses, but
 # ~50 km might resemble them rather well.
-# Notice! length of resR must be different from lengths of TXaz, TXel and hh for this to work proprely... 
 resR = np.array([3., 3., 6., 12., 24., 36.])
 #resR = 3.
 

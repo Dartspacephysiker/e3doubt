@@ -478,7 +478,8 @@ class Experiment(object):
             print(f"Only one resR value provided (resR = {resR}); using this for all altitudes")
             resR = np.ones(h.size)*resR
         elif resR.size == hsize:
-            resR = np.broadcast_to(resR[np.newaxis,:], shape).ravel()
+            if azsize != 1 or elsize!=1:
+                resR = np.broadcast_to(resR[np.newaxis,:], shape).ravel()
         else:
             raise AttributeError("resR input is not valid! resR must be a scalar or a 1D array with same length as 'h'")
 
