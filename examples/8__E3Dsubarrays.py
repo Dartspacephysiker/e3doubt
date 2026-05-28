@@ -25,16 +25,16 @@ TX_power_per_subarray = 91*2*500
 bitLength = 3.
 
 # transmitter beam azimuth array
-TXaz = np.array([0])
+#TXaz = np.array([0])
 
 # transmitter beam elevation array
-TXel = np.array([90])
+#TXel = np.array([90])
 
 # transmitter beam azimuth array
-#TXaz = np.array([0, 90, 180, 270, 0])
+TXaz = np.array([0, 90, 180, 270, 0])
 
 # transmitter beam elevation array
-#TXel = np.array([45, 45, 45, 45, 90])
+TXel = np.array([45, 45, 45, 45, 90])
 
 # Altitudes, where the errors are estimated
 hh = np.array([100., 150., 200.,300., 500., 600.])
@@ -42,6 +42,8 @@ hh = np.array([100., 150., 200.,300., 500., 600.])
 # final integrated range resolution at each alttiude
 # this can be larger than the bit length. Again, not prepared for long pulses, but
 # ~50 km might resemble them rather well.
+# Notice: equal lengths of TXax, TXel, hh, and resR will cause an error. Add one extra height to avoid
+# this, if needed. 
 resR = np.array([3., 3., 6., 12., 24., 36.])
 #resR = 3.
 
