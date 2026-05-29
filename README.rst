@@ -112,7 +112,7 @@ I. Virtanen (2023). ISgeometry [Computer software]. doi:10.5281/zenodo.6623186
 
 References
 ==========
-e3doubt publication coming soon!
+Hatch, S. M., Virtanen, I., Laundal, K. M., Tesfaw, H. W., Vierinen, J., Huyghebaert, D. R., Spicher, A., and Hessen, J. C.: Toolkit for incoherent scatter radar experiment design and applications to EISCAT_3D, Ann. Geophys., 43, 633–649, https://doi.org/10.5194/angeo-43-633-2025, 2025.
 
 The mathematical development of ISgeometry is described in Appendix B of Lehtinen, Virtanen, and Orispää (2014).
 

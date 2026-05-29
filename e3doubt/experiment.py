@@ -6,7 +6,7 @@ This module can be used to
 
 MIT License
 
-Copyright (c) 2023 Spencer M. Hatch and Ilkka Virtanen
+Copyright (c) 2026 Spencer M. Hatch and Ilkka Virtanen
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -80,6 +80,10 @@ get_gd = lambda trx: (trx['gdlat'],trx['glon'])
 #                       'Te':1e3,   # K
 #                       'Ti':500}   # K
 
+# default standard deviations of priors for calctype=='prior'
+DEFAULT_PRIORS = dict(ne=1e12,Ti=1e4,Te=1e4,Coll=0,Vi=1e4,Comp=0)
+VALID_PRIORS = ['ne','Ti','Te','Coll','Vi','Comp']
+
 DEFAULT_RADAR_PARMS = dict(fradar=233e6,  # Radar frequency [Hz]
                            # tau0=100,      # ACF time-scale [us] (IS THIS REASONABLE?); Calculated automatically by parameterErrorEstimates.R
                            dutyCycle=.25,  # Transmitter duty cycle
@@ -91,6 +95,7 @@ DEFAULT_RADAR_PARMS = dict(fradar=233e6,  # Radar frequency [Hz]
                            mineleRec=(30,30,30),
                            phArrTrans=True,
                            phArrRec=(True,True,True),
+                           maxLag=None,  # Longest lag measured [us]. By default 5 times the lag corresponding to the ion thermal speed. Only applicable for calctype == 'prior'
 )
 
 DEFAULT_AZ = np.array([  0,  35,  69, 101, 130, 156, 180, 204, 231, 258, 288, 323,
@@ -144,6 +149,8 @@ class Experiment(object):
                  radarparms = DEFAULT_RADAR_PARMS,
                  # default_ionosphere=DEFAULT_IONOSPHERE,
                  refdate_models=datetime(2017,8,5,22,0,0),  # IRI reference date (important date)
+                 calctype = 'fast', # Choose between specifying parameter priors (calctype='prior') or not (calctype='fast')
+                 priors=DEFAULT_PRIORS,
                  brent=False,
     ):
         """ __init__ function for Experiment class
@@ -183,6 +190,13 @@ class Experiment(object):
         refdate_models  : datetime-like
                     Reference datetime for running IRI and MSIS models
         
+        calctype       : string
+                    Can either be 'fast' or 'prior'. If 'fast', ISgeometry's parameterErrorEstimates function will be used for estimating errors. If 'prior', the parameterErrorEstimatesPrior function will be used.
+
+        priors          : dictionary-like
+                    Dictionary of standard deviations of priors. Valid keys are 'ne','Te','Ti',Comp','Vi'.
+                    Only used for calctype=='prior'.
+
         brent           : bool
                     If True, use Brent's method to find the range of each point defined by az, el, h.
                     If Brent's method is not used, the Earth is assumed to be spherical ONLY for calculation
@@ -243,6 +257,13 @@ class Experiment(object):
 
         """
 
+        assert calctype in ['fast','prior'], "Only 'fast' and 'prior' are valid choices for keyword 'calctype'!"
+        if calctype == 'prior':
+            for prior in priors:
+                assert prior in VALID_PRIORS
+                
+        self._calctype = calctype
+
         print("WARNING: Haven't implemented/stored following keywords: beam_width")
 
         ####################
@@ -276,6 +297,25 @@ class Experiment(object):
                 'nuin':np.copy(blank)
             }
         )
+
+        if self._calctype == 'prior':
+            print("calctype=='prior' selected!")
+            priorVars = ['nePr','TiPr','TePr','CollPr','ViPr','CompPr']
+
+            print("Initializing prior variables '"+"', ".join(priorVars)+"' with following values:")
+            for prior in priors:
+                print(f"'{prior}Pr' = {priors[prior]}")
+            # for prior in priors:
+                self._ionos[prior+'Pr'] = np.ones(self.N['pt'])*priors[prior]
+
+            print("Remember that these can be modified using the set_ionos() method.")
+
+            # if maxLag is not None:
+            # self._radarconfig['maxLag']
+
+        else:
+            assert 'maxLag' not in self._radarconfig,"maxLag can only be specified for calctype='prior'!"
+
 
         self._atmos = pd.DataFrame(
             dict(
@@ -405,6 +445,15 @@ class Experiment(object):
                              # 'tau0'      : tau0,
         }
 
+        # Only worry about specifying maxLag if we're using prior-based error estimation
+        if self._calctype == 'prior':
+            if 'maxLag' not in radarparms:
+                # self._radarconfig['maxLag'] = None
+                radarparms['maxLag'] = None
+                print('maxLag is "None" by default')
+
+            self._radarconfig['maxLag'] = radarparms['maxLag']
+            print("self._radarconfig['maxLag'] = "+str(self._radarconfig['maxLag']))
 
     def _setup_az_el_h_arrays(self, az, el, h, dwell_times, resR, brent=False):
         """
@@ -917,11 +966,28 @@ class Experiment(object):
             for key,var in self._rparms.items():
                 runparms[key] = var
             
+            if self._calctype == 'prior':
+                if (self._radarconfig['maxLag'] is not None):
+                    runparms['maxLag'] = self._radarconfig['maxLag']
+
+                if ('hTeTi' in runparms) and runparms['hTeTi'] != None:
+                    warnings.warn(f"Since calc=='prior', using hTeTi to set TePr=0 at all altitudes below {hTeTi} km")
+                    #Let's use hTeTi 
+                    idx_lt_hTeTi = self._points['h'] < runparms['hTeTi']
+                    self._ionos.loc[idx_lt_hTeTi,'TePr'] = 0
+
+                    runparms.pop('hTeTi')
+
             parmnames = ['ne','Te','Ti','Vi']
             nelabels = ['dne'+lab for lab in labels]
             Telabels = ['dTe'+lab for lab in labels]
             Tilabels = ['dTi'+lab for lab in labels]
             Vilabels = ['dVi'+lab for lab in labels]
+
+            if self._calctype == 'prior':
+                Colllabels = ['dColl'+lab for lab in labels]
+                Complabels = ['dComp'+lab for lab in labels]
+                
             for parm in parmnames:
                 
                 for i in range(Ndict):
@@ -931,6 +997,9 @@ class Experiment(object):
             
             getcols = ['gclat','glon','h','dwell_time','resR']
             ionocols = ['ne','Ti','Te','fracO+','nuin']
+
+            if self._calctype == 'prior':
+                ionocols = ionocols + ['nePr','TiPr','TePr','CollPr','ViPr','CompPr']
 
             fwhmRange = self._radarconfig['fwhmRange']
 
@@ -945,43 +1014,84 @@ class Experiment(object):
             
                 gclat, glon, h, dwellT, resR = point[getcols]
             
-                Ne, Ti, Te, fracOp, nuin = self._ionos.iloc[i][ionocols]
-            
                 intT = dwellT * integrationsec  # integration time for this beam
+            
+                if self._calctype == 'fast':
+                    Ne, Ti, Te, fracOp, nuin = self._ionos.iloc[i][ionocols]
 
-                out = self._ISgeometry.parameterErrorEstimates(
-                    gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange,
-                    resR,
-                    intT,
-                    **runparms)
-            
-                los = out[0]
-                dNes = [list(los[i])[0] for i in range(len(los))]
-                dTis = [list(los[i])[1] for i in range(len(los))]
-            
-                dNes.append(list(out[1])[0])
-                dTis.append(list(out[1])[1])
-            
-                if h > hTeTi:
-                    # got dNe, dTi, dTe, dVi
-                    dTes = [list(los[i])[2] for i in range(len(los))] 
-                    dVis = [list(los[i])[3] for i in range(len(los))]
-            
-                    dTes.append(list(out[1])[2])
-                    dVis.append(list(out[1])[3])
-            
-                else:
-                    # got dNe, dTi, dVi
-                    dTes = dTis
-                    dVis = [list(los[i])[2] for i in range(len(los))]
+                    out = self._ISgeometry.parameterErrorEstimates(
+                        gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange,
+                        resR,
+                        intT,
+                        **runparms)
+
+                    los = out[0]
+                    dNes = [list(los[i])[0] for i in range(len(los))]
+                    dTis = [list(los[i])[1] for i in range(len(los))]
+                    
+                    dNes.append(list(out[1])[0])
+                    dTis.append(list(out[1])[1])
+                    
+                    if h > hTeTi:
+                        # got dNe, dTi, dTe, dVi
+                        dTes = [list(los[i])[2] for i in range(len(los))] 
+                        dVis = [list(los[i])[3] for i in range(len(los))]
+                    
+                        dTes.append(list(out[1])[2])
+                        dVis.append(list(out[1])[3])
+                    
+                    else:
+                        # got dNe, dTi, dVi
+                        dTes = dTis
+                        dVis = [list(los[i])[2] for i in range(len(los))]
+                                
+                        dVis.append(list(out[1])[2])
                         
-                    dVis.append(list(out[1])[2])
+                    dfunc.loc[i,nelabels] = dNes
+                    dfunc.loc[i,Telabels] = dTes
+                    dfunc.loc[i,Tilabels] = dTis
+                    dfunc.loc[i,Vilabels] = dVis
+                    
+
+                elif self._calctype == 'prior':
+
+                    Ne, Ti, Te, fracOp, nuin, NePr, TiPr, TePr, CollPr, ViPr, CompPr = self._ionos.iloc[i][ionocols]
+
+                    out = self._ISgeometry.parameterErrorEstimatesPrior(
+                        gclat, glon, h, Ne, Ti, Te, nuin, fracOp, fwhmRange,
+                        resR,
+                        intT,
+                        NePr=NePr,
+                        TiPr=TiPr,
+                        TePr=TePr,
+                        CollPr=CollPr,
+                        ViPr=ViPr,
+                        CompPr=CompPr,
+                        **runparms)
             
-                dfunc.loc[i,nelabels] = dNes
-                dfunc.loc[i,Telabels] = dTes
-                dfunc.loc[i,Tilabels] = dTis
-                dfunc.loc[i,Vilabels] = dVis
-                
+                    los = out[0]
+                    dNes = [list(los[i])[0] for i in range(len(los))]
+                    dTis = [list(los[i])[1] for i in range(len(los))]
+                    dTes = [list(los[i])[2] for i in range(len(los))]
+                    dColls = [list(los[i])[3] for i in range(len(los))]
+                    dVis = [list(los[i])[4] for i in range(len(los))]
+                    dComps = [list(los[i])[5] for i in range(len(los))]
+                    
+                    dNes.append(list(out[1])[0])
+                    dTis.append(list(out[1])[1])
+                    dTes.append(list(out[1])[2])
+                    dColls.append(list(out[1])[3])
+                    dVis.append(list(out[1])[4])
+                    dComps.append(list(out[1])[5])
+                    
+                    dfunc.loc[i,nelabels] = dNes
+                    dfunc.loc[i,Tilabels] = dTis
+                    dfunc.loc[i,Telabels] = dTes
+                    dfunc.loc[i,Colllabels] = dColls
+                    dfunc.loc[i,Vilabels] = dVis
+                    dfunc.loc[i,Complabels] = dComps
+    
+
             print("Done!",flush=True)
 
             # store dfunc and last run options
@@ -996,6 +1106,9 @@ class Experiment(object):
             self._isChanged_atmos = False
             self._isChanged_ionos = False
             self._isChanged_radar = False
+            if self._calctype == 'prior':
+                warnings.warn("Uncertainties are currently not automatically recalculated if you modify the 'maxLag' variable! If you have changed 'maxLag', you need to specify force_recalc=True when you call 'get_uncertainties'")
+
 
             return dfunc
         
