@@ -68,7 +68,7 @@ except:
 try:
     from pymsis import msis as pmsis
 except:
-    print("Couldn't import python package 'iri2016'! Make sure it's installed")
+    print("Couldn't import python package 'pymsis'! Make sure it's installed")
     pmsis = None
     
 
@@ -86,7 +86,7 @@ DEFAULT_RADAR_PARMS = dict(fradar=233e6,  # Radar frequency [Hz]
                            RXduty=(0.75,1.,1.),      # Receiver duty cycle
                            Tnoise=300, # Noise temperature [K] for receiver sites
                            Pt=3.5e6,      # Transmitter power in Watts
-                           fwhmRange=2,   # Range resolution in ACF decoding, i.e., modulation bit length (= "bit length of code"?) [km]
+                           fwhmRange=2,   # Range resolution in ACF _decoding_, i.e., modulation bit length (= "bit length of code"?) [km]
                            mineleTrans=30,
                            mineleRec=(30,30,30),
                            phArrTrans=True,
@@ -887,10 +887,13 @@ class Experiment(object):
 
                     scale = integfac/integfac_previous
 
-                    print(f"Returning results from before, but with uncertainties scaled by a factor of {scale:.5f}")
+                    print(f"Returning previously calculated uncertainties, but with uncertainties scaled by a factor of {scale:.5f}")
                     dfunc = self._dfunc.copy()
                     for c in dfunc:
                         dfunc.loc[:,c] = dfunc[c].values*scale
+
+                    self._dfunc_kw['integrationsec'] = integrationsec
+                    self._dfunc = dfunc
 
                     return dfunc
 

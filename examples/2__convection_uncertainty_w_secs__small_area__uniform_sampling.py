@@ -49,7 +49,7 @@ gdlat_r2, glon_r2 = sites.loc['KRS']
 
 # Define grid
 h_grid = 200
-Lgrid = 100e3
+Lgrid = 40e3
 Wgrid = 100e3
 Lresgrid = Wresgrid = 10e3 #grid resolution in m                                 
 wshiftgrid = -Wresgrid//2
@@ -64,17 +64,19 @@ dr = 25
 fwhmRange = 2
 H  = np.arange(200,400+dr,dr)
 
-exp = experiment.Experiment(az=az,el=el,h=H,resR=dr)
+# refdate_models=datetime(2017,8,5,22,0,0)
+refdate_models = datetime(2020,12,1,0,0,0)
+
+exp = experiment.Experiment(az=az,el=el,h=H,resR=dr,refdate_models=refdate_models)
 print(f"Setting fhwmRange to {fwhmRange} km")
 exp.set_radarparm("fwhmRange",fwhmRange)
 exp.run_models()
-dfunc = exp.get_uncertainties(integrationsec=300)
+dfunc = exp.get_uncertainties(integrationsec=3000)
 
 points = exp.get_points()
 radarconfig = exp.get_radarconfig()
 Npt = exp.N['pt']
 
-igrf_refdate = datetime(2020,12,1)
 apex_refh = 110
 mapto_h = apex_refh
 
@@ -83,7 +85,7 @@ gdlat, glon, h = points['gdlat'].values,points['glon'].values, points['h'].value
 # Get matrix that lets us map covariance to ionospheric altitude
 B, (gdlatmap, glonmap) = get_perpendicular_velocity_mapping_matrix(gdlat,glon,h,
                                                                apex_refh=apex_refh,
-                                                               refdate=igrf_refdate,
+                                                               refdate=refdate_models,
                                                                return_mapped_coordinates=True)
 
 gclatmap = geodetic2geocentriclat(gdlatmap)

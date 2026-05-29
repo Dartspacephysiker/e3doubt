@@ -24,6 +24,8 @@ from importlib import reload
 reload(e3doubt.radar_utils)
 from e3doubt.radar_utils import get_point_az_el_geod,ECEFtosphericalENUMatrix,get_range_line, get_field_aligned_beam
 
+manually_set_clabels = True
+
 sites = get_supported_sites()
 
 igrf_refdate = datetime(2020,12,1)
@@ -198,8 +200,8 @@ rings = [ECEF2geodetic(*get_range_line(gdlat_t, glon_t, ringaz, ringel, h).T) fo
 
 imclat = ax.contour(glonp.reshape(dlshape),gdlatp.reshape(dlshape),alatp.reshape(dlshape),colors='k')
 imclon = ax.contour(glonp.reshape(dlshape),gdlatp.reshape(dlshape),alonp.reshape(dlshape),colors='k')
-ax.clabel(imclat, imclat.levels, fmt=fmtzeronodeg, colors='k', inline=1, fontsize=12)
-ax.clabel(imclon, imclon.levels, fmt=fmtzeronodeg, colors='k', inline=1, fontsize=12)
+ax.clabel(imclat, imclat.levels, fmt=fmtzeronodeg, colors='k', inline=1, fontsize=12,manual=manually_set_clabels)
+ax.clabel(imclon, imclon.levels, fmt=fmtzeronodeg, colors='k', inline=1, fontsize=12,manual=manually_set_clabels)
 
 plt.scatter(glon_t, gdlat_t, **txopts)
 plt.scatter(glon_r1, gdlat_r1, **rxopts)
@@ -274,7 +276,7 @@ plt.scatter(glon_r2, gdlat_r2, **rxopts)
 # cbm = plt.colorbar(imm,location='bottom')
 # cbm.set_label("nT")
 
-ax.clabel(immc, immc.levels, colors='k', inline=1, fontsize=12)
+ax.clabel(immc, immc.levels, colors='k', inline=1, fontsize=12,manual=manually_set_clabels)
 
 for cllon,cllat in get_coastlines(resolution=coastres):
     plt.plot(cllon,cllat,**coastopts)
@@ -298,7 +300,7 @@ plt.scatter(glon_t, gdlat_t, **txopts)
 plt.scatter(glon_r1, gdlat_r1, **rxopts)
 plt.scatter(glon_r2, gdlat_r2, **rxopts)
 
-ax.clabel(im2c, im2c.levels, fmt=fmtnodeg, colors='k', inline=1, fontsize=12)
+ax.clabel(im2c, im2c.levels, fmt=fmtnodeg, colors='k', inline=1, fontsize=12,manual=manually_set_clabels)
 
 for cllon,cllat in get_coastlines(resolution=coastres):
     plt.plot(cllon,cllat,**coastopts)
@@ -311,4 +313,4 @@ plt.grid(color='gray',lw=0.5)
 
 plt.tight_layout()
 
-plt.savefig(f"./plots/0__inclination_fieldstrength_etc_over_e3d__altlayout_refh{h}.png")
+plt.savefig(f"./plots/0__inclination_fieldstrength_etc_over_e3d__altlayout_refh{h}dad.png")

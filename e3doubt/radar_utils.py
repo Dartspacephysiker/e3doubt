@@ -334,6 +334,7 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
                         orientation=0.,
                         gdlat_ctr=None,
                         glon_ctr=None,
+                        use_cell_centers=False,
                         return_grid=False,
                         ctr_on_fieldaligned_beam=False,
                         atol=0.2,
@@ -375,6 +376,8 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
         Geodetic latitude of the grid center in deg.
     glon_ctr    : float, default gdlat_t
         Geographic longitude of the grid center in deg.
+    use_cell_centers: bool, default False
+        If True, use center of grid cell instead of edge. 
             
 
     ctr_on_fieldaligned_beam  : bool, default False
@@ -436,7 +439,11 @@ def get_2D_csgrid_az_el(gdlat_t, glon_t, h_grid=200, L=100e3, W=100e3, Lres=10e3
     projection = cs.CSprojection((ctrglon, ctrgclat), orientation) 
     grid = cs.CSgrid(projection, L, W, Lres, Wres, R = RI, wshift = wshift)
     
-    gclat, glon = grid.lat.ravel(), grid.lon.ravel()
+    if use_cell_centers:
+        gclat, glon = grid.lat.ravel(), grid.lon.ravel()
+    else:
+        gclat, glon = grid.lat_mesh.ravel(), grid.lon_mesh.ravel()
+
     gdlat, h, _, _ = geoc2geod(90.-gclat, grid.R/1e3, 0., 0.)
     assert np.all(np.isclose(h,h_grid,atol=atol))  # permit inaccurancy of 200 m by default
     npt = gdlat.size
