@@ -1489,7 +1489,6 @@ def get_los_vector_enu(p, t, r,
 # los_rtp, rtp = cartesian_to_spherical_with_position(*e3du.points[['xecef','yecef','zecef']].values.T,
 #                                                     *los)
 
-
 def _get_valids(x,df):
     """
     valid: list of valid strings
