@@ -10,7 +10,7 @@ plt.ion()
 
 import ppigrf
 
-from lompe import cs
+from secsy import cubedsphere as cs
 import os
 
 import e3doubt
@@ -21,6 +21,10 @@ from e3doubt.geodesy import geodetic2geocentricXYZ,ECEF2geodetic,geod2geoc
 
 import e3doubt.radar_utils
 from e3doubt.radar_utils import get_point_az_el_geod,ECEFtosphericalENUMatrix,get_range_line
+
+show_coastlines = False
+if show_coastlines:
+    assert 1<0,"Showing coastlines is currently broken, since the secsy package now uses a special interface to Natural Earth that I have not yet figured out."
 
 sites = get_supported_sites()
 
@@ -188,8 +192,9 @@ for i,ring in enumerate(rings):
     plt.plot(ringlon,ringlat,lw=ringlw[i],color=ringcols[i])
 
 
-for cllon,cllat in get_coastlines(resolution=coastres):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution=coastres):
+        plt.plot(cllon,cllat,**coastopts)
 
 plt.xlim((glonp.min(),glonp.max()))
 plt.ylim((gdlatp.min(),gdlatp.max()))
@@ -214,8 +219,9 @@ plt.scatter(glon_t, gdlat_t, **txopts)
 plt.scatter(glon_r1, gdlat_r1, **rxopts)
 plt.scatter(glon_r2, gdlat_r2, **rxopts)
 plt.scatter(glonp[win_ip], gdlatp[win_ip], marker='^',s=25,label="min",color='gray',edgecolor='k',zorder=100,alpha=.8)
-for cllon,cllat in get_coastlines(resolution=coastres):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution=coastres):
+        plt.plot(cllon,cllat,**coastopts)
 
 plt.xlim((glonp.min(),glonp.max()))
 plt.ylim((gdlatp.min(),gdlatp.max()))
@@ -247,8 +253,9 @@ plt.scatter(glon_r2, gdlat_r2, **rxopts)
 
 ax.clabel(immc, immc.levels, colors='k', inline=1, fontsize=12)
 
-for cllon,cllat in get_coastlines(resolution=coastres):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution=coastres):
+        plt.plot(cllon,cllat,**coastopts)
 
 plt.xlim((glonp.min(),glonp.max()))
 plt.ylim((gdlatp.min(),gdlatp.max()))
@@ -271,8 +278,9 @@ plt.scatter(glon_r2, gdlat_r2, **rxopts)
 
 ax.clabel(im2c, im2c.levels, fmt=fmtinc, colors='k', inline=1, fontsize=12)
 
-for cllon,cllat in get_coastlines(resolution=coastres):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution=coastres):
+        plt.plot(cllon,cllat,**coastopts)
 
 plt.xlim((glonp.min(),glonp.max()))
 plt.ylim((gdlatp.min(),gdlatp.max()))

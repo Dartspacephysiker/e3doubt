@@ -21,7 +21,7 @@ mpl.rcParams.update({'font.size': 13})
 
 try:
     import lompe
-    from lompe import cs
+    from secsy import cubedsphere as cs
     from secsy import CSplot
 except:
 

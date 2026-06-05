@@ -22,7 +22,7 @@ from apexpy import Apex
 
 try:
     import lompe
-    from lompe import cs
+    from secsy import cubedsphere as cs
     from secsy import CSplot
 except:
     print("Must have lompe installed to get theory matrices for  this example!\nTry Option 1 or Option 2 here: https://github.com/klaundal/lompe")

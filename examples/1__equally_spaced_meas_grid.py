@@ -20,9 +20,13 @@ from e3doubt.radar_utils import get_point_az_el_geod,get_2D_csgrid_az_el, get_fi
 
 from apexpy import Apex
 
-from lompe import cs
+from secsy import cubedsphere as cs
 
 import os
+
+show_coastlines = False
+if show_coastlines:
+    assert 1<0,"Showing coastlines is currently broken, since the secsy package now uses a special interface to Natural Earth that I have not yet figured out."
 
 # get grid edges
 def gridedges(lon,lat):
@@ -157,8 +161,9 @@ glonb, gdlatb = gridedges(glon.reshape(grid.lat.shape),gdlat.reshape(grid.lat.sh
 plt.plot(glonb,gdlatb,color='C0')
 plt.xlabel("Geographic longitude [deg]")
 plt.ylabel("Geodetic latitude [deg]")
-for cllon,cllat in get_coastlines(resolution='50m'):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution='50m'):
+        plt.plot(cllon,cllat,**coastopts)
 
 
 # Zoomed-in view
@@ -168,5 +173,6 @@ plt.ylim(glatlimz)
 
 plt.scatter(glon,gdlat,marker='o',color='C0')
 plt.xlabel("Geographic longitude [deg]")
-for cllon,cllat in get_coastlines(resolution='10m'):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution='10m'):
+        plt.plot(cllon,cllat,**coastopts)

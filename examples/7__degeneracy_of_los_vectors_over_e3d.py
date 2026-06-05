@@ -69,7 +69,7 @@ plt.ion()
 
 import ppigrf
 
-from lompe import cs
+from secsy import cubedsphere as cs
 import os
 
 import e3doubt
@@ -82,6 +82,10 @@ import e3doubt.radar_utils
 from importlib import reload
 reload(e3doubt.radar_utils)
 from e3doubt.radar_utils import get_points_az_el_geod_ECEF, get_range_line, get_kvec
+
+show_coastlines = False
+if show_coastlines:
+    assert 1<0,"Showing coastlines is currently broken, since the secsy package now uses a special interface to Natural Earth that I have not yet figured out."
 
 sites = get_supported_sites()
 
@@ -278,8 +282,9 @@ imvisiblelw = 3
 imvisibleAB = ax.contour(GLON,GDLAT,badAB.reshape(dlshape),colors=imvisiblecolor,linewidths=imvisiblelw)
 
 
-for cllon,cllat in get_coastlines(resolution=coastres):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution=coastres):
+        plt.plot(cllon,cllat,**coastopts)
 
 ### Show dot product of k vectors
 
@@ -335,8 +340,9 @@ ax.set_title(r"$\cos^{-1}\left(\mathbf{k}_A \cdot \mathbf{k}_C\right)$"+" [deg]"
 # plt.xlabel("Geographic lon [deg]")
 # plt.ylabel("Geodetic lat [deg]")
 
-for cllon,cllat in get_coastlines(resolution=coastres):
-    plt.plot(cllon,cllat,**coastopts)
+if show_coastlines:
+    for cllon,cllat in get_coastlines(resolution=coastres):
+        plt.plot(cllon,cllat,**coastopts)
 
 ### Show where we can see stuff
 imvisibleAC = ax.contour(GLON,GDLAT,badAC.reshape(dlshape),colors=imvisiblecolor,linewidths=imvisiblelw)

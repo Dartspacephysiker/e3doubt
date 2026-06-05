@@ -193,7 +193,7 @@ covp = np.transpose(np.einsum('ij...,jk...,lk...',B,covmats,B),axes=[1,2,0])  # 
 
 # set up cubed sphere projection and grid
 import lompe
-from lompe import cs
+from secsy import cubedsphere as cs
 from secsy import CSplot
 # sites = get_supported_sites()
 
